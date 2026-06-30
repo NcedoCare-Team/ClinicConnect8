@@ -1,11 +1,12 @@
 // src/screens/main/OnboardingScreen.js
-// Shown once after first account creation. Collects target role + 2 skills.
+// NcedoCare patient health profile — collected once after first login.
+// Captures: language preference, chronic conditions, allergies, medications.
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   Platform, StatusBar, KeyboardAvoidingView, ScrollView,
-  Animated, Dimensions, Alert,
+  Animated, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,57 +14,59 @@ import { auth } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
 
-const { width: W } = Dimensions.get('window');
+const LANGUAGES = [
+  { code: 'en', label: 'English' },
+  { code: 'zu', label: 'isiZulu' },
+  { code: 'xh', label: 'isiXhosa' },
+  { code: 'af', label: 'Afrikaans' },
+  { code: 'st', label: 'Sesotho' },
+];
 
-const TARGET_ROLES = [
-  { label: 'Software Developer',   icon: 'code-slash',       value: 'Software Developer' },
-  { label: 'Business Analyst',     icon: 'analytics-outline', value: 'Business Analyst' },
-  { label: 'Data Analyst',         icon: 'bar-chart-outline', value: 'Data Analyst' },
-  { label: 'Project Manager',      icon: 'people-outline',    value: 'Project Manager' },
-  { label: 'UX / UI Designer',     icon: 'color-palette-outline', value: 'UX/UI Designer' },
-  { label: 'Marketing Specialist', icon: 'megaphone-outline', value: 'Marketing Specialist' },
-  { label: 'Accountant / Finance', icon: 'calculator-outline', value: 'Accountant' },
-  { label: 'Admin / Office Support', icon: 'desktop-outline', value: 'Admin Support' },
-  { label: 'Customer Service',     icon: 'chatbubble-ellipses-outline', value: 'Customer Service' },
-  { label: 'Other',                icon: 'ellipsis-horizontal', value: 'Other' },
+const COMMON_CONDITIONS = [
+  'Hypertension', 'Diabetes', 'Asthma', 'HIV/AIDS',
+  'Heart Disease', 'Epilepsy', 'Arthritis', 'TB',
 ];
 
 export default function OnboardingScreen({ navigation }) {
   const displayName = auth.currentUser?.displayName || 'there';
-  const firstName = displayName.split(' ')[0];
+  const firstName   = displayName.split(' ')[0];
 
-  const [targetRole, setTargetRole] = useState('');
-  const [customRole, setCustomRole] = useState('');
-  const [skill1, setSkill1] = useState('');
-  const [skill2, setSkill2] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [language,    setLanguage]    = useState('en');
+  const [conditions,  setConditions]  = useState([]);   // selected from chips
+  const [customCond,  setCustomCond]  = useState('');   // freetext additional
+  const [allergies,   setAllergies]   = useState('');
+  const [medications, setMedications] = useState('');
+  const [saving,      setSaving]      = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 450, useNativeDriver: true }),
     ]).start();
   }, []);
 
-  const resolvedRole = targetRole === 'Other' ? customRole.trim() : targetRole;
-  const isValid = resolvedRole.length > 0 && skill1.trim().length > 0 && skill2.trim().length > 0;
+  const toggleCondition = (cond) => {
+    setConditions(prev =>
+      prev.includes(cond) ? prev.filter(c => c !== cond) : [...prev, cond]
+    );
+  };
 
   const handleComplete = async () => {
-    if (!isValid) {
-      Alert.alert('Almost there', 'Please select a target role and enter at least 2 skills.');
-      return;
-    }
-
     setSaving(true);
     try {
+      const allConditions = [
+        ...conditions,
+        ...customCond.split(',').map(s => s.trim()).filter(Boolean),
+      ];
       await UserProfileService.saveProfile({
         displayName,
-        targetRole: resolvedRole,
-        field: resolvedRole,
-        skills: [skill1.trim(), skill2.trim()],
+        language,
+        chronicConditions: allConditions,
+        allergies: allergies.trim(),
+        currentMedications: medications.trim(),
       });
       await UserProfileService.setOnboardingDone();
       navigation.replace('Main');
@@ -83,125 +86,115 @@ export default function OnboardingScreen({ navigation }) {
   return (
     <View style={s.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-      {/* Decorative gradient at top */}
       <LinearGradient
-        colors={['rgba(37,99,235,0.08)', 'rgba(37,99,235,0.01)', 'transparent']}
+        colors={['rgba(27,107,71,0.07)', 'rgba(27,107,71,0.01)', 'transparent']}
         style={s.topGradient}
       />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
 
             {/* Welcome */}
             <View style={s.welcomeSection}>
               <View style={s.iconWrap}>
                 <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={s.iconGradient}>
-                  <Ionicons name="rocket-outline" size={28} color="#FFFFFF" />
+                  <Ionicons name="heart-outline" size={28} color="#FFFFFF" />
                 </LinearGradient>
               </View>
               <Text style={s.welcomeTitle}>Welcome, {firstName}!</Text>
               <Text style={s.welcomeSub}>
-                Let's set up your career profile so VisionAlly can find the best opportunities for you.
+                Help us keep you safe by sharing a few health details. This information is encrypted and only seen by your healthcare team.
               </Text>
             </View>
 
-            {/* Target Role */}
+            {/* Language */}
             <View style={s.card}>
               <View style={s.sectionHeader}>
-                <Ionicons name="briefcase-outline" size={18} color={COLORS.primary} />
-                <Text style={s.sectionTitle}>What role are you targeting?</Text>
+                <Ionicons name="language-outline" size={18} color={COLORS.primary} />
+                <Text style={s.sectionTitle}>Preferred Language</Text>
               </View>
-              <Text style={s.sectionSub}>Pick the one that best describes your goal</Text>
-
-              <View style={s.rolesGrid}>
-                {TARGET_ROLES.map((role) => (
+              <View style={s.chipsRow}>
+                {LANGUAGES.map(l => (
                   <TouchableOpacity
-                    key={role.value}
-                    style={[s.roleChip, targetRole === role.value && s.roleChipActive]}
-                    onPress={() => setTargetRole(role.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={role.icon}
-                      size={16}
-                      color={targetRole === role.value ? COLORS.primary : COLORS.textSecondary}
-                    />
-                    <Text style={[s.roleChipText, targetRole === role.value && s.roleChipTextActive]}>
-                      {role.label}
-                    </Text>
+                    key={l.code}
+                    style={[s.chip, language === l.code && s.chipActive]}
+                    onPress={() => setLanguage(l.code)}>
+                    <Text style={[s.chipText, language === l.code && s.chipTextActive]}>{l.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-
-              {targetRole === 'Other' && (
-                <TextInput
-                  style={s.input}
-                  placeholder="Enter your target role..."
-                  placeholderTextColor={COLORS.textTertiary}
-                  value={customRole}
-                  onChangeText={setCustomRole}
-                  autoCapitalize="words"
-                />
-              )}
             </View>
 
-            {/* Skills */}
+            {/* Chronic conditions */}
             <View style={s.card}>
               <View style={s.sectionHeader}>
-                <Ionicons name="flash-outline" size={18} color={COLORS.primary} />
-                <Text style={s.sectionTitle}>Your top skills</Text>
+                <Ionicons name="pulse-outline" size={18} color={COLORS.primary} />
+                <Text style={s.sectionTitle}>Chronic Conditions</Text>
               </View>
-              <Text style={s.sectionSub}>Add at least 2 — you can add more in Settings later</Text>
-
-              <View style={s.skillRow}>
-                <View style={s.skillBadge}><Text style={s.skillBadgeText}>1</Text></View>
-                <TextInput
-                  style={[s.input, { flex: 1, marginBottom: 0 }]}
-                  placeholder="e.g. JavaScript, Financial Analysis..."
-                  placeholderTextColor={COLORS.textTertiary}
-                  value={skill1}
-                  onChangeText={setSkill1}
-                  autoCapitalize="words"
-                />
+              <Text style={s.sectionSub}>Select all that apply</Text>
+              <View style={s.chipsRow}>
+                {COMMON_CONDITIONS.map(cond => (
+                  <TouchableOpacity
+                    key={cond}
+                    style={[s.chip, conditions.includes(cond) && s.chipActive]}
+                    onPress={() => toggleCondition(cond)}>
+                    {conditions.includes(cond) && (
+                      <Ionicons name="checkmark" size={12} color={COLORS.primary} />
+                    )}
+                    <Text style={[s.chipText, conditions.includes(cond) && s.chipTextActive]}>{cond}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-
-              <View style={s.skillRow}>
-                <View style={s.skillBadge}><Text style={s.skillBadgeText}>2</Text></View>
-                <TextInput
-                  style={[s.input, { flex: 1, marginBottom: 0 }]}
-                  placeholder="e.g. React Native, Project Management..."
-                  placeholderTextColor={COLORS.textTertiary}
-                  value={skill2}
-                  onChangeText={setSkill2}
-                  autoCapitalize="words"
-                />
-              </View>
+              <TextInput
+                style={s.input}
+                placeholder="Other conditions, comma separated..."
+                placeholderTextColor={COLORS.textTertiary}
+                value={customCond}
+                onChangeText={setCustomCond}
+              />
             </View>
 
-            {/* Continue Button */}
+            {/* Allergies */}
+            <View style={s.card}>
+              <View style={s.sectionHeader}>
+                <Ionicons name="warning-outline" size={18} color={COLORS.primary} />
+                <Text style={s.sectionTitle}>Allergies</Text>
+              </View>
+              <TextInput
+                style={s.input}
+                placeholder="e.g. Penicillin, Peanuts, Latex..."
+                placeholderTextColor={COLORS.textTertiary}
+                value={allergies}
+                onChangeText={setAllergies}
+              />
+            </View>
+
+            {/* Current medications */}
+            <View style={s.card}>
+              <View style={s.sectionHeader}>
+                <Ionicons name="medkit-outline" size={18} color={COLORS.primary} />
+                <Text style={s.sectionTitle}>Current Medications</Text>
+              </View>
+              <TextInput
+                style={[s.input, { height: 80, textAlignVertical: 'top' }]}
+                placeholder="e.g. Metformin 500mg, Amlodipine 5mg..."
+                placeholderTextColor={COLORS.textTertiary}
+                value={medications}
+                onChangeText={setMedications}
+                multiline
+              />
+            </View>
+
+            {/* Continue */}
             <TouchableOpacity
-              style={[s.continueBtn, !isValid && s.continueBtnDisabled]}
+              style={s.continueBtn}
               onPress={handleComplete}
-              disabled={!isValid || saving}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={isValid ? [COLORS.primary, COLORS.primaryDark] : ['#D1D5DB', '#9CA3AF']}
-                style={s.continueBtnGradient}
-              >
+              disabled={saving}
+              activeOpacity={0.85}>
+              <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={s.continueBtnGradient}>
                 <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                <Text style={s.continueBtnText}>
-                  {saving ? 'Saving...' : 'Get Started'}
-                </Text>
+                <Text style={s.continueBtnText}>{saving ? 'Saving...' : 'Complete Setup'}</Text>
               </LinearGradient>
             </TouchableOpacity>
 
@@ -218,7 +211,7 @@ export default function OnboardingScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container:   { flex: 1, backgroundColor: '#FFFFFF' },
   topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 300 },
   scroll: {
     paddingHorizontal: 24,
@@ -226,66 +219,54 @@ const s = StyleSheet.create({
   },
 
   welcomeSection: { alignItems: 'center', marginBottom: 28 },
-  iconWrap: { marginBottom: 16 },
+  iconWrap:       { marginBottom: 16 },
   iconGradient: {
     width: 64, height: 64, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
   },
   welcomeTitle: { fontSize: 26, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 8 },
-  welcomeSub: {
-    fontSize: 14, color: COLORS.textSecondary, textAlign: 'center',
-    lineHeight: 20, paddingHorizontal: 10,
+  welcomeSub:   {
+    fontSize: 13, color: COLORS.textSecondary, textAlign: 'center',
+    lineHeight: 20, paddingHorizontal: 8,
   },
 
   card: {
     backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, marginBottom: 16,
     borderWidth: 1, borderColor: COLORS.borderLight,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
       android: { elevation: 2 },
     }),
   },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
-  sectionSub: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 14, marginLeft: 26 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionTitle:  { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
+  sectionSub:    { fontSize: 12, color: COLORS.textSecondary, marginBottom: 10, marginTop: -6 },
 
-  rolesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  roleChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 10,
-    borderRadius: 12, backgroundColor: COLORS.backgroundSecondary,
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 20, backgroundColor: COLORS.backgroundSecondary,
     borderWidth: 1.5, borderColor: COLORS.border,
   },
-  roleChipActive: {
-    backgroundColor: `${COLORS.primary}10`,
-    borderColor: COLORS.primary,
-  },
-  roleChipText: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
-  roleChipTextActive: { color: COLORS.primary },
+  chipActive:    { backgroundColor: COLORS.primaryVeryLight, borderColor: COLORS.primary },
+  chipText:      { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
+  chipTextActive:{ color: COLORS.primary },
 
   input: {
     borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 13 : 10,
-    fontSize: 14, color: COLORS.textPrimary, fontWeight: '500',
-    backgroundColor: COLORS.backgroundSecondary, marginBottom: 10, marginTop: 10,
+    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+    fontSize: 14, color: COLORS.textPrimary,
+    backgroundColor: COLORS.backgroundSecondary, marginTop: 6,
   },
 
-  skillRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  skillBadge: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: `${COLORS.primary}15`,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  skillBadgeText: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
-
-  continueBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 8 },
-  continueBtnDisabled: { opacity: 0.6 },
+  continueBtn:         { borderRadius: 16, overflow: 'hidden', marginTop: 8 },
   continueBtnGradient: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 16, gap: 8,
   },
   continueBtnText: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
 
-  skipBtn: { alignItems: 'center', paddingVertical: 16 },
+  skipBtn:  { alignItems: 'center', paddingVertical: 16 },
   skipText: { fontSize: 14, fontWeight: '600', color: COLORS.textTertiary },
 });

@@ -1,5 +1,5 @@
 // src/navigation/AppNavigator.js
-// Registers all screens including Onboarding, AboutMe, and InterviewRoom.
+// NcedoCare auth-aware navigator.
 
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
@@ -9,19 +9,17 @@ import { auth } from '../../firebase';
 import { StorageService } from '../utils/storage';
 import { UserProfileService } from '../services/UserProfileService';
 
-import LoginScreen            from '../screens/auth/LoginScreen';
-import MainScreen             from '../screens/main/MainScreen';
-import ChatConversationScreen from '../screens/main/ChatConversationScreen';
-import AboutMeScreen          from '../screens/main/AboutMeScreen';
-import InterviewRoomScreen    from '../screens/main/InterviewRoomScreen';
-import OnboardingScreen       from '../screens/main/OnboardingScreen';
+import LoginScreen        from '../screens/auth/LoginScreen';
+import MainScreen         from '../screens/main/MainScreen';
+import OnboardingScreen   from '../screens/main/OnboardingScreen';
+import TriageResultScreen from '../screens/main/TriageResultScreen';
 
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
-  const [user,             setUser]             = useState(null);
-  const [loading,          setLoading]          = useState(true);
-  const [onboardingDone,   setOnboardingDone]   = useState(true); // default true to avoid flash
+  const [user,           setUser]           = useState(null);
+  const [loading,        setLoading]        = useState(true);
+  const [onboardingDone, setOnboardingDone] = useState(true);
 
   useEffect(() => {
     const checkStoredSession = async () => {
@@ -67,52 +65,17 @@ export default function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <>
-            {/* ── Authenticated stack ─────────────────────────────────────── */}
-
-            {/* Show onboarding first if not completed */}
             {!onboardingDone && (
-              <Stack.Screen
-                name="Onboarding"
-                component={OnboardingScreen}
-                options={{ animation: 'fade' }}
-              />
+              <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ animation: 'fade' }} />
             )}
-
-            {/* Main tab screen */}
             <Stack.Screen name="Main" component={MainScreen} />
-
-            {/* Chat conversation overlay */}
             <Stack.Screen
-              name="ChatConversation"
-              component={ChatConversationScreen}
-              options={{ headerShown: false, headerBackTitleVisible: false }}
-            />
-
-            {/* About Me profile form */}
-            <Stack.Screen
-              name="AboutMe"
-              component={AboutMeScreen}
-              options={{
-                headerShown:         false,
-                animation:           'slide_from_bottom',
-                gestureEnabled:      true,
-                gestureDirection:    'vertical',
-              }}
-            />
-
-            {/* Full-screen AI interview room */}
-            <Stack.Screen
-              name="InterviewRoom"
-              component={InterviewRoomScreen}
-              options={{
-                headerShown:      false,
-                animation:        'fade',
-                gestureEnabled:   false,
-              }}
+              name="TriageResult"
+              component={TriageResultScreen}
+              options={{ animation: 'slide_from_bottom', gestureEnabled: true, gestureDirection: 'vertical' }}
             />
           </>
         ) : (
-          /* ── Unauthenticated stack ─────────────────────────────────── */
           <Stack.Screen name="Login" component={LoginScreen} />
         )}
       </Stack.Navigator>

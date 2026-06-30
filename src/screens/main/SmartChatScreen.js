@@ -1,582 +1,427 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// src/screens/main/SmartChatScreen.js  — SymptomInputScreen
+// NcedoCare: Text or voice symptom entry → AI triage analysis → TriageResultScreen
+
+import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  FlatList,
-  TextInput,
-  Platform,
-  StatusBar,
-  RefreshControl,
-  Alert,
-  Switch,
+  View, Text, StyleSheet, TextInput, TouchableOpacity,
+  Platform, StatusBar, ScrollView, Alert, ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { Audio } from 'expo-av';
+import { auth, firestore } from '../../../firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { COLORS } from '../../constants/colors';
-import { ChatStorageService } from '../../services/ChatStorageService';
+import ApiService from '../../services/ApiService';
+import { UserProfileService } from '../../services/UserProfileService';
+
+const COMMON_SYMPTOMS = [
+  'Chest pain', 'Difficulty breathing', 'High fever', 'Severe headache',
+  'Persistent cough', 'Dizziness', 'Nausea / vomiting', 'Abdominal pain',
+  'Back pain', 'Rash / skin changes', 'Fatigue', 'Joint pain',
+];
 
 export default function SmartChatScreen({ navigation }) {
-  const [conversations, setConversations] = useState([]);
-  const [filteredConversations, setFilteredConversations] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
-  const [sortBy, setSortBy] = useState('recent');
-  const [refreshing, setRefreshing] = useState(false);
+  const [mode,         setMode]         = useState('text');
+  const [symptoms,     setSymptoms]     = useState('');
+  const [selected,     setSelected]     = useState([]);
+  const [duration,     setDuration]     = useState('');
+  const [severity,     setSeverity]     = useState(5);
+  const [loading,      setLoading]      = useState(false);
+  const [recording,    setRecording]    = useState(null);
+  const [recordingUri, setRecordingUri] = useState(null);
+  const [isRecording,  setIsRecording]  = useState(false);
 
-  // Load conversations when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      console.log('SmartChatScreen focused - loading conversations');
-      loadConversations();
-    }, [])
-  );
+  const toggleSymptom = (s) =>
+    setSelected(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
 
-  // Also load on initial mount
-  useEffect(() => {
-    loadConversations();
-  }, []);
-
-  // Filter conversations when dependencies change
-  useEffect(() => {
-    filterConversations();
-  }, [conversations, searchQuery, showArchived, sortBy]);
-
-  const loadConversations = async () => {
+  const startRecording = async () => {
     try {
-      console.log('Loading conversations...');
-      const data = await ChatStorageService.getConversations();
-      console.log(`Loaded ${data.length} conversations`);
-      setConversations(data);
-    } catch (error) {
-      console.log('Error loading conversations:', error);
-      Alert.alert('Error', 'Failed to load conversations');
-    }
-  };
-
-  const onRefresh = useCallback(async () => {
-    console.log('Manual refresh triggered');
-    setRefreshing(true);
-    await loadConversations();
-    setRefreshing(false);
-  }, []);
-
-  const filterConversations = () => {
-    let filtered = conversations.filter(conv => 
-      showArchived ? conv.archived : !conv.archived
-    );
-
-    // Search filter
-    if (searchQuery) {
-      filtered = filtered.filter(conv =>
-        conv.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        conv.lastMessage?.toLowerCase().includes(searchQuery.toLowerCase())
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Permission required', 'Microphone access is needed for voice input.');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
+      setRecording(rec);
+      setIsRecording(true);
+    } catch {
+      Alert.alert('Error', 'Could not start recording. Please use text input instead.');
     }
-
-    // Sort
-    filtered.sort((a, b) => {
-      const dateA = new Date(a.updatedAt || a.createdAt);
-      const dateB = new Date(b.updatedAt || b.createdAt);
-      return sortBy === 'recent' ? dateB - dateA : dateA - dateB;
-    });
-
-    setFilteredConversations(filtered);
   };
 
-  const handleNewConversation = () => {
-    navigation.navigate('ChatConversation', { 
-      conversationId: null,
-      conversationTitle: 'New Conversation' 
-    });
+  const stopRecording = async () => {
+    if (!recording) return;
+    setIsRecording(false);
+    await recording.stopAndUnloadAsync();
+    setRecordingUri(recording.getURI());
+    setRecording(null);
+    Alert.alert('Recording saved', 'Tap "Analyse Symptoms" to continue.');
   };
 
-  const handleConversationPress = (conversation) => {
-    navigation.navigate('ChatConversation', { 
-      conversationId: conversation.id,
-      conversationTitle: conversation.title 
-    });
+  const buildSymptomText = () => {
+    const parts = [];
+    if (selected.length > 0)  parts.push(selected.join(', '));
+    if (symptoms.trim())       parts.push(symptoms.trim());
+    if (duration.trim())       parts.push(`Duration: ${duration.trim()}`);
+    parts.push(`Severity: ${severity}/10`);
+    return parts.join('. ');
   };
 
-  const handleDeleteConversation = (conversationId) => {
-    Alert.alert(
-      'Delete Conversation',
-      'Are you sure you want to delete this conversation? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await ChatStorageService.deleteConversation(conversationId);
-            await loadConversations(); // Refresh immediately after delete
-          },
-        },
-      ]
-    );
+  const handleSubmit = async () => {
+    const symptomText = buildSymptomText();
+    if (!symptomText && !recordingUri) {
+      Alert.alert('No symptoms entered', 'Please describe your symptoms or use voice input.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const uid     = auth.currentUser?.uid;
+      const profile = await UserProfileService.getProfile();
+
+      const context = [
+        `Symptoms: ${symptomText}`,
+        profile.chronicConditions?.length ? `Chronic conditions: ${profile.chronicConditions.join(', ')}` : '',
+        profile.allergies           ? `Allergies: ${profile.allergies}`               : '',
+        profile.currentMedications  ? `Medications: ${profile.currentMedications}`    : '',
+      ].filter(Boolean).join('\n');
+
+      const result = await ApiService.sendChatMessage({ text: `TRIAGE_REQUEST\n${context}` });
+
+      if (!result.success) {
+        Alert.alert('Triage Error', result.message || 'Analysis failed. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      const aiText   = result.data.response || '';
+      const priority = parsePriority(aiText);
+      const riskScore = parseRiskScore(aiText);
+      const reasoning = parseReasoning(aiText);
+
+      const caseRef = await addDoc(collection(firestore, 'triage_cases'), {
+        patientId:      uid,
+        patientName:    profile.displayName || auth.currentUser?.displayName || '',
+        symptoms:       symptomText,
+        aiResponse:     aiText,
+        priority,
+        riskScore,
+        aiReasoning:    reasoning,
+        status:         'queued',
+        createdAt:      serverTimestamp(),
+        queuePosition:  null,
+        estimatedWait:  null,
+        nurseDecision:  null,
+        overrideReason: null,
+      });
+
+      setSymptoms(''); setSelected([]); setDuration(''); setSeverity(5); setRecordingUri(null);
+
+      navigation.navigate('TriageResult', {
+        caseId: caseRef.id, priority, riskScore, reasoning, symptoms: symptomText, aiText,
+      });
+    } catch (err) {
+      console.error('Triage submit error:', err);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    }
+    setLoading(false);
   };
-
-  const handleArchiveConversation = async (conversationId, archived) => {
-    await ChatStorageService.archiveConversation(conversationId, !archived);
-    await loadConversations(); // Refresh immediately after archive
-  };
-
-  const formatTimeAgo = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-    return date.toLocaleDateString();
-  };
-
-    const renderConversationCard = ({ item }) => (
-    <TouchableOpacity
-        style={styles.conversationCard}
-        onPress={() => handleConversationPress(item)}
-        activeOpacity={0.7}
-    >
-        <View style={styles.conversationIconWrapper}>
-        <View style={styles.conversationIcon}>
-            <Ionicons name="chatbubble-ellipses" size={24} color={COLORS.primary} />
-        </View>
-        </View>
-
-        <View style={styles.conversationContent}>
-        <View style={styles.conversationHeader}>
-            <Text style={styles.conversationTitle} numberOfLines={1}>
-            {item.title || 'New Conversation'}
-            </Text>
-            <Text style={styles.conversationTime}>
-            {formatTimeAgo(item.updatedAt || item.createdAt)}
-            </Text>
-        </View>
-
-        <Text style={styles.conversationPreview} numberOfLines={2}>
-            {item.lastMessage || 'Start a conversation...'}
-        </Text>
-
-        <View style={styles.conversationFooter}>
-            <View style={styles.messageCountBadge}>
-            <Text style={styles.messageCountText}>
-                {item.messageCount || 0} messages
-            </Text>
-            </View>
-
-            <View style={styles.conversationActions}>
-            <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => handleArchiveConversation(item.id, item.archived)}
-            >
-                <Ionicons 
-                name={item.archived ? "archive" : "archive-outline"} 
-                size={20} 
-                color={COLORS.textSecondary} 
-                />
-            </TouchableOpacity>
-            <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => handleDeleteConversation(item.id)}
-            >
-                <Ionicons name="trash-outline" size={20} color={COLORS.error} />
-            </TouchableOpacity>
-            </View>
-        </View>
-        </View>
-    </TouchableOpacity>
-    );
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <View style={styles.emptyIconWrapper}>
-        <Ionicons name="chatbubbles-outline" size={64} color={COLORS.textTertiary} />
-      </View>
-      <Text style={styles.emptyTitle}>No conversations yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Start a conversation to get career guidance and interview preparation support
-      </Text>
-      <TouchableOpacity style={styles.emptyButton} onPress={handleNewConversation}>
-        <Text style={styles.emptyButtonText}>Start Chatting</Text>
-      </TouchableOpacity>
-    </View>
-  );
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.inkDark} />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} translucent />
 
-      {/* Fixed Hero Header */}
+      {/* Header */}
       <LinearGradient
-        colors={[COLORS.inkDark, COLORS.inkSoft]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.heroHeader}
-      >
-        <View style={styles.heroContent}>
-          <Text style={styles.heroTitle}>Smart Chat</Text>
-          <Text style={styles.heroTitle2}>AI Career Coach</Text>
-          <Text style={styles.heroSub}>
-            Career guidance · Interview prep
-          </Text>
+        colors={[COLORS.primaryDark, COLORS.primary]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={styles.header}>
+        <Text style={styles.headerTitle}>Check Symptoms</Text>
+        <Text style={styles.headerSub}>Tell us how you feel — we'll assess your urgency</Text>
+
+        <View style={styles.modeToggle}>
+          {['text', 'voice'].map(m => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
+              onPress={() => setMode(m)}>
+              <Ionicons
+                name={m === 'text' ? 'create-outline' : 'mic-outline'}
+                size={16}
+                color={mode === m ? COLORS.primary : COLORS.white}
+              />
+              <Text style={[styles.modeBtnText, mode === m && styles.modeBtnTextActive]}>
+                {m === 'text' ? 'Type' : 'Speak'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-        <View style={styles.heroDeco1} />
-        <View style={styles.heroDeco2} />
       </LinearGradient>
 
-      <View style={styles.contentSheet}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
-      {/* New Conversation Button */}
-      <View style={styles.newConversationContainer}>
-        <TouchableOpacity 
-          style={styles.newConversationButton}
-          onPress={handleNewConversation}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add-circle" size={20} color={COLORS.white} />
-          <Text style={styles.newConversationText}>Start New Conversation</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color={COLORS.textSecondary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search conversations..."
-            placeholderTextColor={COLORS.textTertiary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Filter Controls */}
-      <View style={styles.filterContainer}>
-        <View style={styles.filterLeft}>
-          <TouchableOpacity
-            style={styles.filterButton}
-            onPress={() => setSortBy(sortBy === 'recent' ? 'oldest' : 'recent')}
-          >
-            <Ionicons 
-              name={sortBy === 'recent' ? 'arrow-down' : 'arrow-up'} 
-              size={16} 
-              color={COLORS.primary} 
-            />
-            <Text style={styles.filterButtonText}>
-              {sortBy === 'recent' ? 'Recent' : 'Oldest'}
+          {/* Privacy notice */}
+          <View style={styles.privacyBanner}>
+            <Ionicons name="lock-closed-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.privacyText}>
+              Your information is private and encrypted. Only your healthcare team can view it.
             </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.filterRight}>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Show Archived</Text>
-            <Switch
-              value={showArchived}
-              onValueChange={setShowArchived}
-              trackColor={{ false: '#f0f0f0', true: COLORS.primary + '40' }}
-              thumbColor={showArchived ? COLORS.primary : '#f4f3f4'}
-              ios_backgroundColor="#f0f0f0"
-            />
           </View>
-        </View>
-      </View>
 
-      {/* Conversation Count */}
-      <View style={styles.countContainer}>
-        <Text style={styles.countText}>
-          {filteredConversations.length} {showArchived ? 'Archived' : ''} Conversation{filteredConversations.length !== 1 ? 's' : ''}
-        </Text>
-      </View>
+          {mode === 'text' ? (
+            <>
+              {/* Symptom chips */}
+              <Text style={styles.cardLabel}>Common Symptoms</Text>
+              <View style={styles.chipsWrap}>
+                {COMMON_SYMPTOMS.map(s => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[styles.chip, selected.includes(s) && styles.chipActive]}
+                    onPress={() => toggleSymptom(s)}>
+                    {selected.includes(s) && (
+                      <Ionicons name="checkmark" size={11} color={COLORS.primary} />
+                    )}
+                    <Text style={[styles.chipText, selected.includes(s) && styles.chipTextActive]}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-      {/* Conversations List */}
-      <FlatList
-        data={filteredConversations}
-        renderItem={renderConversationCard}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.conversationsList}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={COLORS.primary}
-            colors={[COLORS.primary]}
-          />
-        }
-      />
-      </View>
+              {/* Freetext */}
+              <Text style={styles.cardLabel}>Describe in your own words</Text>
+              <View style={styles.textAreaWrap}>
+                <TextInput
+                  style={styles.textArea}
+                  placeholder='e.g. "I have had chest pain for two days with shortness of breath..."'
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={symptoms}
+                  onChangeText={setSymptoms}
+                  multiline
+                  textAlignVertical="top"
+                />
+              </View>
+
+              {/* Duration */}
+              <Text style={styles.cardLabel}>How long have you had these symptoms?</Text>
+              <View style={styles.inputWrap}>
+                <Ionicons name="time-outline" size={18} color={COLORS.textSecondary} />
+                <TextInput
+                  style={styles.inlineInput}
+                  placeholder="e.g. 2 days, since yesterday morning..."
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={duration}
+                  onChangeText={setDuration}
+                />
+              </View>
+
+              {/* Severity */}
+              <Text style={styles.cardLabel}>
+                Pain / Discomfort Severity:{' '}
+                <Text style={{ color: severity >= 8 ? COLORS.critical : COLORS.primary }}>{severity}/10</Text>
+              </Text>
+              <View style={styles.severityRow}>
+                {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                  <TouchableOpacity
+                    key={n}
+                    style={[
+                      styles.severityBtn,
+                      severity === n && styles.severityBtnActive,
+                      severity === n && n >= 8 && { backgroundColor: COLORS.critical, borderColor: COLORS.critical },
+                    ]}
+                    onPress={() => setSeverity(n)}>
+                    <Text style={[styles.severityText, severity === n && styles.severityTextActive]}>{n}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          ) : (
+            /* Voice mode */
+            <View style={styles.voiceContainer}>
+              <View style={[styles.micCircle, isRecording && styles.micCircleActive]}>
+                <Ionicons
+                  name={isRecording ? 'stop-circle' : 'mic'}
+                  size={56}
+                  color={isRecording ? COLORS.critical : COLORS.primary}
+                />
+              </View>
+              <Text style={styles.voiceTitle}>
+                {recordingUri ? 'Recording saved' : isRecording ? 'Listening...' : 'Tap to speak'}
+              </Text>
+              <Text style={styles.voiceSub}>
+                {recordingUri
+                  ? 'Your voice recording is ready for analysis'
+                  : isRecording
+                    ? 'Speak clearly about your symptoms'
+                    : 'Describe your symptoms naturally in your own language'}
+              </Text>
+
+              {!isRecording && !recordingUri && (
+                <TouchableOpacity style={styles.recordBtn} onPress={startRecording}>
+                  <Text style={styles.recordBtnText}>Start Recording</Text>
+                </TouchableOpacity>
+              )}
+              {isRecording && (
+                <TouchableOpacity
+                  style={[styles.recordBtn, { backgroundColor: COLORS.critical }]}
+                  onPress={stopRecording}>
+                  <Text style={styles.recordBtnText}>Stop Recording</Text>
+                </TouchableOpacity>
+              )}
+              {recordingUri && !isRecording && (
+                <TouchableOpacity style={styles.recordBtn} onPress={() => setRecordingUri(null)}>
+                  <Text style={styles.recordBtnText}>Re-record</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Submit */}
+          <TouchableOpacity
+            style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+            onPress={handleSubmit}
+            disabled={loading}
+            activeOpacity={0.85}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.primaryDark]}
+              style={styles.submitGradient}>
+              {loading
+                ? <ActivityIndicator color={COLORS.white} />
+                : (
+                  <>
+                    <Ionicons name="analytics-outline" size={20} color={COLORS.white} />
+                    <Text style={styles.submitText}>Analyse Symptoms</Text>
+                  </>
+                )
+              }
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <Text style={styles.disclaimer}>
+            This is an AI-assisted assessment. A healthcare professional will make the final decision.
+          </Text>
+          <View style={{ height: 120 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
+// ─── Parse helpers ────────────────────────────────────────────────────────────
+
+function parsePriority(text) {
+  const upper = text.toUpperCase();
+  if (upper.includes('CRITICAL')) return 'CRITICAL';
+  if (upper.includes('HIGH'))     return 'HIGH';
+  if (upper.includes('MEDIUM'))   return 'MEDIUM';
+  return 'LOW';
+}
+
+function parseRiskScore(text) {
+  const match = text.match(/risk[_ ]?score[:\s]+(\d+(?:\.\d+)?)/i);
+  return match ? parseFloat(match[1]) : null;
+}
+
+function parseReasoning(text) {
+  const lines = text.split('\n').filter(l => l.trim().length > 20);
+  return lines.slice(0, 3).join(' ') || text.substring(0, 300);
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.backgroundSecondary,
-  },
-  // Fixed Hero Header (matching JobTrends)
-  heroHeader: {
+  container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
+
+  header: {
     paddingTop: Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight || 0) + 20,
-    paddingBottom: 44, paddingHorizontal: 24,
-    position: 'relative', overflow: 'hidden',
+    paddingBottom: 24, paddingHorizontal: 24,
   },
-  heroContent: { zIndex: 2 },
-  heroTitle: { fontSize: 30, fontWeight: '900', color: COLORS.white, letterSpacing: -0.5 },
-  heroTitle2: { fontSize: 30, fontWeight: '900', color: COLORS.primaryLight, letterSpacing: -0.5 },
-  heroSub: {
-    fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '500', marginTop: 6,
+  headerTitle: { fontSize: 26, fontWeight: '900', color: COLORS.white, letterSpacing: -0.5 },
+  headerSub:   { fontSize: 13, color: 'rgba(255,255,255,0.70)', marginTop: 4 },
+
+  modeToggle: {
+    flexDirection: 'row', marginTop: 16, alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: 3, gap: 2,
   },
-  heroDeco1: {
-    position: 'absolute', right: -30, top: -30,
-    width: 160, height: 160, borderRadius: 80,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+  modeBtn:          { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18 },
+  modeBtnActive:    { backgroundColor: COLORS.white },
+  modeBtnText:      { fontSize: 13, fontWeight: '600', color: COLORS.white },
+  modeBtnTextActive:{ color: COLORS.primary },
+
+  scroll: { paddingTop: 16, paddingHorizontal: 20 },
+
+  privacyBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.primaryVeryLight, borderRadius: 10,
+    padding: 10, marginBottom: 20,
   },
-  heroDeco2: {
-    position: 'absolute', right: 50, bottom: -50,
+  privacyText: { flex: 1, fontSize: 11, color: COLORS.primary, fontWeight: '500', lineHeight: 15 },
+
+  cardLabel: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 10 },
+
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: COLORS.white, borderWidth: 1.5, borderColor: COLORS.border,
+  },
+  chipActive:    { backgroundColor: COLORS.primaryVeryLight, borderColor: COLORS.primary },
+  chipText:      { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
+  chipTextActive:{ color: COLORS.primary },
+
+  textAreaWrap: {
+    backgroundColor: COLORS.white, borderRadius: 14, borderWidth: 1.5,
+    borderColor: COLORS.border, padding: 14, marginBottom: 20, minHeight: 100,
+  },
+  textArea: { fontSize: 14, color: COLORS.textPrimary, lineHeight: 22, minHeight: 80 },
+
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1.5,
+    borderColor: COLORS.border, paddingHorizontal: 14, height: 50, marginBottom: 20,
+  },
+  inlineInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary },
+
+  severityRow: { flexDirection: 'row', gap: 5, marginBottom: 24 },
+  severityBtn: {
+    flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 8, backgroundColor: COLORS.backgroundTertiary, borderWidth: 1, borderColor: COLORS.border,
+  },
+  severityBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  severityText:      { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary },
+  severityTextActive:{ color: COLORS.white },
+
+  // Voice
+  voiceContainer: { alignItems: 'center', paddingVertical: 32, gap: 12 },
+  micCircle: {
     width: 120, height: 120, borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.primaryVeryLight,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: COLORS.primaryGlow,
   },
+  micCircleActive: { backgroundColor: COLORS.criticalLight, borderColor: COLORS.critical },
+  voiceTitle:      { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary },
+  voiceSub:        { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', paddingHorizontal: 20 },
+  recordBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 14,
+    paddingHorizontal: 32, paddingVertical: 14, marginTop: 8,
+  },
+  recordBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.white },
 
-  // Content sheet with rounded top corners
-  contentSheet: {
-    flex: 1,
-    backgroundColor: COLORS.backgroundSecondary,
-    borderTopRightRadius: 30,
-    marginTop: -20,
-    overflow: 'hidden',
+  // Submit
+  submitBtn:         { borderRadius: 16, overflow: 'hidden', marginTop: 8, marginBottom: 12 },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitGradient: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 16, gap: 10,
   },
+  submitText: { fontSize: 16, fontWeight: '800', color: COLORS.white },
 
-  newConversationContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: COLORS.background,
-  },
-  newConversationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  newConversationText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.white,
-  },
-  searchContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: COLORS.background,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: COLORS.background,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  filterLeft: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: `${COLORS.primary}10`,
-  },
-  filterButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  filterRight: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toggleLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  countContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  countText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  conversationsList: {
-    padding: 20,
-    paddingBottom: 100,
-  },
-  conversationCard: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.black,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  conversationIconWrapper: {
-    marginRight: 12,
-  },
-  conversationIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: `${COLORS.primary}15`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  conversationContent: {
-    flex: 1,
-  },
-  conversationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  conversationTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginRight: 8,
-  },
-  conversationTime: {
-    fontSize: 11,
-    color: COLORS.textTertiary,
-  },
-  conversationPreview: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  conversationFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  messageCountBadge: {
-    backgroundColor: `${COLORS.primary}10`,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  messageCountText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  conversationActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  archiveContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  archiveText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  deleteButton: {
-    padding: 4,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-  },
-  emptyIconWrapper: {
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 40,
-  },
-  emptyButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  emptyButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.white,
+  disclaimer: {
+    fontSize: 11, color: COLORS.textTertiary, textAlign: 'center',
+    lineHeight: 16, paddingHorizontal: 16,
   },
 });
