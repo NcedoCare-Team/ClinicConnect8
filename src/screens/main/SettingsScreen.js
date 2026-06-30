@@ -29,7 +29,7 @@ export default function SettingsScreen({ navigation }) {
     education: '', careerGoal: '', disability: '', accommodation: '',
   });
   const [profilePicture, setProfilePicture] = useState(null);
-  const [syncing, setSyncing] = useState(false);   // tiny spinner on profile card only
+  const [syncing, setSyncing] = useState(false);   
   const [saving, setSaving] = useState(false);
 
   // Settings (local-only, instant)

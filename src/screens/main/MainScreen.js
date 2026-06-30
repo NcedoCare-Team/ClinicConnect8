@@ -34,7 +34,7 @@ export default function MainScreen({ navigation, route }) {
   useEffect(() => {
     if (route?.params?.tab) setActiveTab(route.params.tab);
   }, [route?.params?.tab]);
-
+   
   const ActiveComponent = TABS.find(tab => tab.id === activeTab)?.component;
 
   const jumpTo = (tabId) => setActiveTab(tabId);
@@ -55,7 +55,7 @@ export default function MainScreen({ navigation, route }) {
       <View style={styles.contentContainer}>
         {ActiveComponent && <ActiveComponent key={activeTab} {...getProps(activeTab)} />}
       </View>
-
+  
       {/* Liquid Glass Bottom Tab Bar */}
       <View style={styles.tabBarContainer}>
         <BlurView intensity={95} tint="systemUltraThinMaterial" style={styles.tabBarBlur}>
