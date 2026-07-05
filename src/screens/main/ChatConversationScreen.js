@@ -12,7 +12,7 @@ import {
   StatusBar,
   Animated,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../constants/colors';
 import ApiService from '../../services/ApiService';
@@ -368,8 +368,8 @@ export default function ChatConversationScreen({ route, navigation }) {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <MaterialCommunityIcons
-                    name="sparkles"
+                  <Ionicons
+                    name="medical"
                     size={26}
                     color={COLORS.white}
                   />

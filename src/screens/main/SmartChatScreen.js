@@ -14,7 +14,7 @@ function AssessmentHeader() {
   return (
     <View style={styles.headerWrap}>
       <LinearGradient
-        colors={[COLORS.primary, COLORS.primaryDark, '#1E3A8A']}
+        colors={['#FFFFFF', '#FAFBFC', COLORS.backgroundSecondary]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.headerGradient}>
@@ -22,21 +22,22 @@ function AssessmentHeader() {
         <View style={styles.decoCircle2} />
         <View style={styles.decoDot1} />
         <View style={styles.decoDot2} />
+        <View style={styles.decoDot3} />
 
         <View style={styles.headerContent}>
           <View style={styles.aiOrbWrap}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.10)']}
-              style={styles.aiOrbRing}>
+            <View style={styles.aiOrbRing}>
               <LinearGradient
-                colors={['#FFFFFF', '#E0EAFF']}
+                colors={[COLORS.primaryVeryLight, '#FFFFFF']}
                 style={styles.aiOrb}>
-                <Ionicons name="sparkles" size={32} color={COLORS.primary} />
+                <Ionicons name="sparkles" size={30} color={COLORS.primary} />
               </LinearGradient>
-            </LinearGradient>
+            </View>
           </View>
 
-          <Text style={styles.headerTitle}>NcedoCare AI</Text>
+          <Text style={styles.headerTitle}>
+            Ncedo<Text style={styles.headerTitleAccent}>Care</Text> AI
+          </Text>
           <Text style={styles.headerSubtitle}>Health Assessment</Text>
 
           <View style={styles.onlinePill}>
@@ -45,6 +46,7 @@ function AssessmentHeader() {
           </View>
         </View>
       </LinearGradient>
+      <View style={styles.headerDivider} />
     </View>
   );
 }
@@ -70,7 +72,7 @@ export default function SmartChatScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AssessmentHeader />
 
       <View style={styles.bodySheet}>
@@ -151,120 +153,149 @@ const cardShadow = Platform.select({
   android: { elevation: 4 },
 });
 
-const sheetShadow = Platform.select({
-  ios:     { shadowColor: '#0F172A', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.06, shadowRadius: 8 },
-  android: { elevation: 4 },
-});
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.primaryDark },
+  container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
 
-  headerWrap: { overflow: 'hidden' },
+  headerWrap: {
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    zIndex: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: { elevation: 6 },
+    }),
+  },
   headerGradient: {
     paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 0) + 16,
-    paddingBottom: 36,
+    paddingBottom: 28,
     paddingHorizontal: LAYOUT.screenPadding,
     alignItems: 'center',
     position: 'relative',
     overflow: 'hidden',
   },
+  headerDivider: {
+    height: 1,
+    backgroundColor: COLORS.borderLight,
+    marginHorizontal: LAYOUT.screenPadding,
+  },
   decoCircle1: {
     position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    top: -60,
-    right: -40,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    top: -55,
+    right: -35,
+    backgroundColor: 'rgba(37,99,235,0.05)',
   },
   decoCircle2: {
     position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    bottom: -20,
-    left: -30,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    bottom: -18,
+    left: -28,
+    backgroundColor: 'rgba(37,99,235,0.04)',
   },
   decoDot1: {
     position: 'absolute',
     width: 8,
     height: 8,
     borderRadius: 4,
-    top: 24,
-    left: '18%',
-    backgroundColor: 'rgba(255,255,255,0.35)',
+    top: 28,
+    left: '16%',
+    backgroundColor: COLORS.primaryGlow,
+    opacity: 0.7,
   },
   decoDot2: {
     position: 'absolute',
     width: 6,
     height: 6,
     borderRadius: 3,
-    bottom: 40,
-    right: '22%',
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    bottom: 36,
+    right: '20%',
+    backgroundColor: COLORS.primaryLight,
+    opacity: 0.35,
+  },
+  decoDot3: {
+    position: 'absolute',
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    top: '42%',
+    right: '12%',
+    backgroundColor: COLORS.primaryGlow,
+    opacity: 0.5,
   },
   headerContent: { alignItems: 'center', zIndex: 2, width: '100%' },
   aiOrbWrap: { marginBottom: 14 },
   aiOrbRing: {
-    padding: 4,
-    borderRadius: 40,
+    padding: 3,
+    borderRadius: 22,
+    backgroundColor: 'rgba(37,99,235,0.06)',
   },
   aiOrb: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
+    width: 68,
+    height: 68,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
     ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12 },
-      android: { elevation: 8 },
+      ios:     { shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      android: { elevation: 2 },
     }),
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: COLORS.textPrimary,
     letterSpacing: -0.5,
     marginBottom: 4,
   },
+  headerTitleAccent: { color: COLORS.primary },
   headerSubtitle: {
     fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.78)',
+    fontWeight: '500',
+    color: COLORS.textSecondary,
     marginBottom: 14,
   },
   onlinePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: COLORS.borderLight,
+    ...Platform.select({
+      ios:     { shadowColor: '#0F172A', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4 },
+      android: { elevation: 1 },
+    }),
   },
   onlineDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#86EFAC',
+    backgroundColor: COLORS.success,
   },
   onlineText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.92)',
+    fontWeight: '600',
+    color: COLORS.textSecondary,
   },
 
   bodySheet: {
     flex: 1,
     backgroundColor: COLORS.backgroundSecondary,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: -18,
     overflow: 'hidden',
-    ...sheetShadow,
   },
   scroll: {
     flexGrow: 1,
@@ -281,9 +312,9 @@ const styles = StyleSheet.create({
   },
 
   sectionLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     textAlign: 'center',
