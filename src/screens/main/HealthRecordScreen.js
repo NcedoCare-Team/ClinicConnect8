@@ -1,29 +1,38 @@
 // src/screens/main/HealthRecordScreen.js
-// NcedoCare: Patient health profile viewer and visit history timeline.
+// Tab Three — "My Health Journey"
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Platform, StatusBar, ActivityIndicator, RefreshControl,
+  Platform, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  collection, query, where, orderBy, getDocs,
-} from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
-import { UserProfileService } from '../../services/UserProfileService';
+import { ScreenHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 
 const PRIORITY_CONFIG = {
-  CRITICAL: { color: COLORS.critical, bg: COLORS.criticalLight, label: 'CRITICAL' },
-  HIGH:     { color: COLORS.high,     bg: COLORS.highLight,     label: 'HIGH'     },
-  MEDIUM:   { color: COLORS.medium,   bg: COLORS.mediumLight,   label: 'MEDIUM'   },
-  LOW:      { color: COLORS.low,      bg: COLORS.lowLight,      label: 'LOW'      },
+  CRITICAL: { color: COLORS.critical, bg: COLORS.criticalLight, label: 'Urgent'   },
+  HIGH:     { color: COLORS.high,     bg: COLORS.highLight,     label: 'High'     },
+  MEDIUM:   { color: COLORS.medium,   bg: COLORS.mediumLight,   label: 'Moderate' },
+  LOW:      { color: COLORS.low,      bg: COLORS.lowLight,      label: 'Low'      },
+};
+
+const STATUS_CONFIG = {
+  queued:    { label: 'Submitted', color: COLORS.medium,  icon: 'send-outline'       },
+  in_review: { label: 'Reviewed',  color: COLORS.primary, icon: 'eye-outline'        },
+  completed: { label: 'Closed',    color: COLORS.low,     icon: 'checkmark-circle-outline' },
+};
+
+const EVENT_ICONS = {
+  assessment: 'sparkles-outline',
+  consultation: 'medical-outline',
+  medication: 'medkit-outline',
+  default: 'document-text-outline',
 };
 
 export default function HealthRecordScreen() {
-  const [profile,    setProfile]    = useState(null);
   const [visits,     setVisits]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -31,14 +40,11 @@ export default function HealthRecordScreen() {
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     try {
-      const p = await UserProfileService.getProfile();
-      setProfile(p);
-
       if (uid) {
         const q = query(
           collection(firestore, 'triage_cases'),
           where('patientId', '==', uid),
-          orderBy('createdAt', 'desc')
+          orderBy('createdAt', 'desc'),
         );
         const snap = await getDocs(q);
         setVisits(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -53,214 +59,184 @@ export default function HealthRecordScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} translucent />
-
-      <LinearGradient
-        colors={[COLORS.primaryDark, COLORS.primary]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-        style={styles.header}>
-        <Text style={styles.headerTitle}>Health Records</Text>
-        <Text style={styles.headerSub}>Your profile and visit history</Text>
-      </LinearGradient>
+      <ScreenHeader
+        title="My Health Journey"
+        subtitle="Your care history, most recent first"
+        rightIcon="filter-outline"
+        onRightPress={() => {}}
+      />
 
       {loading ? (
-        <View style={styles.loadingWrap}><ActivityIndicator color={COLORS.primary} size="large" /></View>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+          <Text style={styles.loadingText}>Setting things up…</Text>
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
           showsVerticalScrollIndicator={false}>
 
-          {/* Health Profile */}
-          {profile && (
-            <View style={styles.card}>
-              <View style={styles.cardTitleRow}>
-                <Ionicons name="person-circle-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.cardTitle}>Health Profile</Text>
-              </View>
-
-              <ProfileRow icon="language-outline" label="Preferred Language" value={langLabel(profile.language)} />
-
-              <ProfileRow
-                icon="pulse-outline"
-                label="Chronic Conditions"
-                value={profile.chronicConditions?.length ? profile.chronicConditions.join(', ') : 'None recorded'}
-              />
-
-              <ProfileRow
-                icon="warning-outline"
-                label="Allergies"
-                value={profile.allergies || 'None recorded'}
-              />
-
-              <ProfileRow
-                icon="medkit-outline"
-                label="Current Medications"
-                value={profile.currentMedications || 'None recorded'}
-                last
-              />
-            </View>
-          )}
-
-          {/* Visit History Timeline */}
-          <Text style={styles.sectionTitle}>Visit History</Text>
-
           {visits.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Ionicons name="document-text-outline" size={44} color={COLORS.textTertiary} />
-              <Text style={styles.emptyTitle}>No visits yet</Text>
-              <Text style={styles.emptySub}>Your consultation history will appear here after your first triage assessment</Text>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="git-network-outline" size={36} color={COLORS.primary} />
+              </View>
+              <Text style={styles.emptyTitle}>Your journey starts here</Text>
+              <Text style={styles.emptySub}>
+                After your first AI health assessment, your care timeline will appear here — assessments, consultations, and more.
+              </Text>
             </View>
           ) : (
             <View style={styles.timeline}>
-              {visits.map((visit, i) => {
-                const cfg = PRIORITY_CONFIG[visit.priority] || PRIORITY_CONFIG.LOW;
-                return (
-                  <View key={visit.id} style={styles.timelineItem}>
-                    {/* Timeline line + dot */}
-                    <View style={styles.timelineLeft}>
-                      <View style={[styles.timelineDot, { backgroundColor: cfg.color }]} />
-                      {i < visits.length - 1 && <View style={styles.timelineLine} />}
-                    </View>
-
-                    <View style={[styles.visitCard, i === 0 && { borderColor: cfg.color, borderWidth: 2 }]}>
-                      <View style={styles.visitCardTop}>
-                        <Text style={styles.visitDate}>
-                          {visit.createdAt?.toDate
-                            ? visit.createdAt.toDate().toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-                            : 'Visit'}
-                        </Text>
-                        <View style={[styles.priorityBadge, { backgroundColor: cfg.bg }]}>
-                          <Text style={[styles.priorityBadgeText, { color: cfg.color }]}>{cfg.label}</Text>
-                        </View>
-                      </View>
-
-                      {visit.diagnosis ? (
-                        <Text style={styles.visitDiagnosis}>{visit.diagnosis}</Text>
-                      ) : (
-                        <Text style={styles.visitSymptoms} numberOfLines={2}>{visit.symptoms}</Text>
-                      )}
-
-                      <View style={styles.visitMeta}>
-                        <StatusChip status={visit.status} />
-                        {visit.nurseDecision && (
-                          <View style={styles.metaItem}>
-                            <Ionicons name="person-outline" size={11} color={COLORS.textTertiary} />
-                            <Text style={styles.metaText}>Nurse: {visit.nurseDecision}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
+              {visits.map((visit, i) => (
+                <TimelineEntry key={visit.id} visit={visit} isLast={i === visits.length - 1} isFirst={i === 0} />
+              ))}
             </View>
           )}
 
-          <View style={{ height: 120 }} />
+          <View style={{ height: LAYOUT.bottomTabClearance }} />
         </ScrollView>
       )}
     </View>
   );
 }
 
-function ProfileRow({ icon, label, value, last }) {
+function TimelineEntry({ visit, isLast, isFirst }) {
+  const priority = PRIORITY_CONFIG[visit.priority] || PRIORITY_CONFIG.LOW;
+  const status   = STATUS_CONFIG[visit.status] || { label: visit.status, color: COLORS.textTertiary, icon: 'ellipse-outline' };
+
   return (
-    <View style={[styles.profileRow, last && { borderBottomWidth: 0, marginBottom: 0, paddingBottom: 0 }]}>
-      <View style={styles.profileRowLeft}>
-        <Ionicons name={icon} size={15} color={COLORS.primary} />
-        <Text style={styles.profileLabel}>{label}</Text>
+    <View style={styles.timelineItem}>
+      <View style={styles.timelineRail}>
+        <View style={[styles.timelineDot, { backgroundColor: priority.color, borderColor: priority.bg }]}>
+          <Ionicons name={EVENT_ICONS.assessment} size={12} color="#FFFFFF" />
+        </View>
+        {!isLast && <View style={styles.timelineLine} />}
       </View>
-      <Text style={styles.profileValue}>{value}</Text>
+
+      <TouchableOpacity
+        style={[styles.entryCard, isFirst && styles.entryCardFirst]}
+        activeOpacity={0.85}>
+        <View style={styles.entryTop}>
+          <Text style={styles.entryTitle} numberOfLines={1}>
+            {visit.diagnosis || 'Health Assessment'}
+          </Text>
+          <View style={[styles.urgencyBadge, { backgroundColor: priority.bg }]}>
+            <Text style={[styles.urgencyText, { color: priority.color }]}>{priority.label}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.entryDate}>
+          {visit.createdAt?.toDate
+            ? visit.createdAt.toDate().toLocaleDateString('en-ZA', {
+                weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+              })
+            : 'Recent'}
+        </Text>
+
+        {visit.symptoms ? (
+          <Text style={styles.entrySymptoms} numberOfLines={2}>{visit.symptoms}</Text>
+        ) : null}
+
+        <View style={styles.entryFooter}>
+          <View style={styles.statusChip}>
+            <Ionicons name={status.icon} size={12} color={status.color} />
+            <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+          </View>
+          {visit.status === 'completed' && (
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="shield-checkmark" size={11} color={COLORS.primary} />
+              <Text style={styles.verifiedText}>Verified</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }
 
-function StatusChip({ status }) {
-  const MAP = {
-    queued:    { label: 'In Queue',   color: COLORS.medium },
-    in_review: { label: 'Reviewed',   color: COLORS.primary },
-    completed: { label: 'Completed',  color: COLORS.low },
-  };
-  const s = MAP[status] || { label: status, color: COLORS.textTertiary };
-  return (
-    <View style={styles.metaItem}>
-      <View style={[styles.statusDot, { backgroundColor: s.color }]} />
-      <Text style={[styles.metaText, { color: s.color }]}>{s.label}</Text>
-    </View>
-  );
-}
-
-function langLabel(code) {
-  const MAP = { en: 'English', zu: 'isiZulu', xh: 'isiXhosa', af: 'Afrikaans', st: 'Sesotho' };
-  return MAP[code] || code || 'Not set';
-}
+const cardShadow = Platform.select({
+  ios:     { shadowColor: '#0F1A14', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+  android: { elevation: 2 },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
 
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight || 0) + 20,
-    paddingBottom: 24, paddingHorizontal: 24,
-  },
-  headerTitle: { fontSize: 26, fontWeight: '900', color: COLORS.white, letterSpacing: -0.5 },
-  headerSub:   { fontSize: 13, color: 'rgba(255,255,255,0.70)', marginTop: 4 },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '500' },
 
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll:      { paddingTop: 20, paddingHorizontal: 20 },
-  sectionTitle:{ fontSize: 17, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 14 },
+  scroll: { paddingHorizontal: LAYOUT.screenPadding, paddingTop: 20 },
 
-  // Health Profile Card
-  card: {
-    backgroundColor: COLORS.white, borderRadius: 18, padding: 18, marginBottom: 24,
-    borderWidth: 1, borderColor: COLORS.borderLight,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10 },
-      android: { elevation: 3 },
-    }),
-  },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  cardTitle:    { fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
-
-  profileRow: {
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight, marginBottom: 0,
-  },
-  profileRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  profileLabel:   { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
-  profileValue:   { fontSize: 14, color: COLORS.textPrimary, fontWeight: '500', paddingLeft: 21 },
-
-  // Timeline
-  timeline: { gap: 0 },
-  timelineItem: { flexDirection: 'row', gap: 14, marginBottom: 16 },
-  timelineLeft: { alignItems: 'center', paddingTop: 6, width: 14 },
-  timelineDot:  { width: 14, height: 14, borderRadius: 7, flexShrink: 0 },
-  timelineLine: { flex: 1, width: 2, backgroundColor: COLORS.borderLight, marginTop: 4, minHeight: 40 },
-
-  visitCard: {
-    flex: 1, backgroundColor: COLORS.white, borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: COLORS.borderLight,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6 },
-      android: { elevation: 2 },
-    }),
-  },
-  visitCardTop:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  visitDate:      { fontSize: 11, fontWeight: '600', color: COLORS.textTertiary },
-  priorityBadge:  { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  priorityBadgeText:{ fontSize: 10, fontWeight: '700' },
-  visitDiagnosis: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 },
-  visitSymptoms:  { fontSize: 13, color: COLORS.textSecondary, marginBottom: 8, lineHeight: 18 },
-
-  visitMeta:  { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  metaItem:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText:   { fontSize: 11, color: COLORS.textTertiary, fontWeight: '500' },
-  statusDot:  { width: 6, height: 6, borderRadius: 3 },
-
-  // Empty
   emptyCard: {
-    backgroundColor: COLORS.white, borderRadius: 18, padding: 32,
-    alignItems: 'center', gap: 8, borderWidth: 1, borderColor: COLORS.borderLight,
+    backgroundColor: '#FFFFFF',
+    borderRadius: LAYOUT.cardRadius,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    ...cardShadow,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary },
-  emptySub:   { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: COLORS.primaryVeryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 8 },
+  emptySub: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
+
+  timeline: { gap: 0 },
+  timelineItem: { flexDirection: 'row', gap: 14 },
+  timelineRail: { alignItems: 'center', width: 28, paddingTop: 4 },
+  timelineDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+  },
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: COLORS.border,
+    marginTop: 4,
+    minHeight: 48,
+  },
+
+  entryCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: LAYOUT.cardRadius,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    ...cardShadow,
+  },
+  entryCardFirst: { borderColor: COLORS.primaryGlow, borderWidth: 1.5 },
+  entryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 },
+  entryTitle: { flex: 1, fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
+  urgencyBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  urgencyText: { fontSize: 10, fontWeight: '700' },
+  entryDate: { fontSize: 11, fontWeight: '600', color: COLORS.textTertiary, marginBottom: 8 },
+  entrySymptoms: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 19, marginBottom: 10 },
+  entryFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  statusChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: COLORS.primaryVeryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  verifiedText: { fontSize: 10, fontWeight: '700', color: COLORS.primary },
 });

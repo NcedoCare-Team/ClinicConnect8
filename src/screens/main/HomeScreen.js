@@ -1,39 +1,39 @@
 // src/screens/main/HomeScreen.js
-// NcedoCare Patient Home Dashboard
-// Sections: Header · Current Queue Status · Quick Actions · Recent Activity
+// Tab One — "My Care" (Home)
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Platform, StatusBar, Linking, Alert, ActivityIndicator,
+  Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
+import { HomeHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 
-const PRIORITY_CONFIG = {
-  CRITICAL: { color: COLORS.critical, bg: COLORS.criticalLight, label: 'CRITICAL', icon: 'alert-circle' },
-  HIGH:     { color: COLORS.high,     bg: COLORS.highLight,     label: 'HIGH',     icon: 'warning'      },
-  MEDIUM:   { color: COLORS.medium,   bg: COLORS.mediumLight,   label: 'MEDIUM',   icon: 'time'         },
-  LOW:      { color: COLORS.low,      bg: COLORS.lowLight,      label: 'LOW',      icon: 'checkmark-circle' },
+const STATUS_BADGE = {
+  queued:    { label: 'Submitted', color: COLORS.medium,  bg: COLORS.mediumLight  },
+  in_review: { label: 'Reviewed',  color: COLORS.primary, bg: COLORS.primaryVeryLight },
+  completed: { label: 'Closed',    color: COLORS.low,     bg: COLORS.lowLight     },
 };
 
-const QUICK_ACTIONS = [
-  { id: 'symptoms', icon: 'pulse',          label: 'Check\nSymptoms',     color: COLORS.primary,  tab: 'symptoms' },
-  { id: 'queue',    icon: 'list',            label: 'My\nQueue',           color: COLORS.high,     tab: 'queue'    },
-  { id: 'records',  icon: 'document-text',  label: 'Health\nRecords',     color: COLORS.info,     tab: 'records'  },
-  { id: 'emergency',icon: 'call',           label: 'Emergency\nHotline',  color: COLORS.critical, action: 'emergency' },
+const INSIGHTS = [
+  { icon: 'leaf-outline', text: 'Flu cases have increased in your community this week.' },
+  { icon: 'water-outline', text: 'Stay hydrated — warmer days are expected this week.' },
+  { icon: 'fitness-outline', text: 'Regular movement supports recovery and wellbeing.' },
 ];
 
 export default function HomeScreen({ navigation }) {
-  const [userName,   setUserName]   = useState('');
-  const [userRole,   setUserRole]   = useState('patient');
-  const [activeCase, setActiveCase] = useState(null);   // current triage case in queue
-  const [recentVisits, setRecentVisits] = useState([]);
-  const [loading,    setLoading]    = useState(true);
+  const [userName,     setUserName]     = useState('');
+  const [facility,     setFacility]     = useState('');
+  const [avatarUri,    setAvatarUri]    = useState(null);
+  const [careItems,    setCareItems]    = useState([]);
+  const [lastAssessment, setLastAssessment] = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [insightIndex, setInsightIndex] = useState(0);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -44,291 +44,370 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => {
     loadDashboard();
+    const timer = setInterval(() => {
+      setInsightIndex(i => (i + 1) % INSIGHTS.length);
+    }, 8000);
+    return () => clearInterval(timer);
   }, []);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     const uid = auth.currentUser?.uid;
-
-    // Load user name and role
     const profile = await UserProfileService.getProfile();
+    const pic = await UserProfileService.getProfilePicture();
+
     setUserName((profile.displayName || auth.currentUser?.displayName || '').split(' ')[0] || 'there');
+    setFacility(profile.primaryFacility || profile.location || '');
+    setAvatarUri(pic);
 
     if (uid) {
       try {
-        const userSnap = await getDoc(doc(firestore, 'users', uid));
-        const role = userSnap.exists() ? (userSnap.data().role || 'patient') : 'patient';
-        setUserRole(role);
-
-        // Load active triage case for patient
-        if (role === 'patient') {
-          const casesRef = collection(firestore, 'triage_cases');
-          const q = query(
-            casesRef,
-            where('patientId', '==', uid),
-            where('status', 'in', ['queued', 'in_review']),
-            orderBy('createdAt', 'desc'),
-            limit(1)
-          );
-          const snap = await getDocs(q);
-          if (!snap.empty) setActiveCase({ id: snap.docs[0].id, ...snap.docs[0].data() });
-
-          // Load recent visits
-          const visitQ = query(
-            casesRef,
-            where('patientId', '==', uid),
-            where('status', '==', 'completed'),
-            orderBy('completedAt', 'desc'),
-            limit(3)
-          );
-          const visitSnap = await getDocs(visitQ);
-          setRecentVisits(visitSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        }
+        const casesRef = collection(firestore, 'triage_cases');
+        const snap = await getDocs(query(
+          casesRef,
+          where('patientId', '==', uid),
+          orderBy('createdAt', 'desc'),
+          limit(5),
+        ));
+        const cases = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setCareItems(buildCareTimeline(cases, profile));
+        setLastAssessment(cases[0] || null);
       } catch { /* non-critical */ }
     }
     setLoading(false);
   }, []);
 
-  const handleQuickAction = (action) => {
-    if (action.tab) {
-      navigation.getParent()?.jumpTo(action.tab);
-    } else if (action.action === 'emergency') {
-      Alert.alert('Emergency Services', 'Call 10177 (Emergency) or 0800 029 999 (Health Hotline)?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Call 10177', onPress: () => Linking.openURL('tel:10177') },
-        { text: 'Health Hotline', onPress: () => Linking.openURL('tel:0800029999') },
-      ]);
-    }
+  const handleChangeFacility = () => {
+    Alert.alert('Change Facility', 'Facility selection will be available in a future update.');
   };
 
-  const priorityCfg = activeCase ? (PRIORITY_CONFIG[activeCase.priority] || PRIORITY_CONFIG.LOW) : null;
+  const insight = INSIGHTS[insightIndex];
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} translucent />
+      <HomeHeader
+        greeting={greeting}
+        userName={userName}
+        facility={facility || 'Connect a healthcare facility'}
+        avatarUri={avatarUri}
+        onProfilePress={() => navigation.getParent()?.jumpTo('profile')}
+        onChangeFacility={handleChangeFacility}
+      />
 
-      {/* Hero Header */}
-      <LinearGradient
-        colors={[COLORS.primaryDark, COLORS.primary]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-        style={styles.heroHeader}>
-        <View style={styles.heroContent}>
-          <View style={styles.heroTopRow}>
-            <View>
-              <Text style={styles.heroGreeting}>{greeting},</Text>
-              <Text style={styles.heroName}>{userName}</Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}>
+
+        {/* Primary Action Card */}
+        <TouchableOpacity
+          style={styles.actionCardWrap}
+          onPress={() => navigation.getParent()?.jumpTo('assessment')}
+          activeOpacity={0.9}>
+          <LinearGradient
+            colors={[COLORS.primary, COLORS.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.actionCard}>
+            <View style={styles.actionCardDeco} />
+            <View style={styles.actionIconWrap}>
+              <Ionicons name="sparkles" size={28} color="#FFFFFF" />
             </View>
-            <TouchableOpacity
-              style={styles.profileBtn}
-              onPress={() => navigation.getParent()?.jumpTo('profile')}>
-              <Text style={styles.profileInitials}>
-                {userName ? userName.charAt(0).toUpperCase() : 'U'}
+            <View style={styles.actionTextBlock}>
+              <Text style={styles.actionTitle}>Start AI Health Assessment</Text>
+              <Text style={styles.actionSub}>
+                Tell us what's going on — we'll guide you.
               </Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.heroSub}>NcedoCare · Smarter care for stronger communities</Text>
+            </View>
+            <Ionicons name="arrow-forward-circle" size={28} color="rgba(255,255,255,0.85)" />
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {/* Care Timeline */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Care Timeline</Text>
+          <TouchableOpacity onPress={() => navigation.getParent()?.jumpTo('journey')}>
+            <Text style={styles.sectionLink}>View all</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.heroDeco1} />
-        <View style={styles.heroDeco2} />
-      </LinearGradient>
 
-      <View style={styles.contentSheet}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
-          {/* Active Queue Status */}
-          {loading ? (
-            <View style={styles.statusCard}>
-              <ActivityIndicator color={COLORS.primary} />
-            </View>
-          ) : activeCase ? (
-            <TouchableOpacity
-              style={[styles.statusCard, { borderLeftColor: priorityCfg.color }]}
-              onPress={() => navigation.getParent()?.jumpTo('queue')}>
-              <View style={styles.statusHeader}>
-                <View style={[styles.priorityBadge, { backgroundColor: priorityCfg.bg }]}>
-                  <Ionicons name={priorityCfg.icon} size={14} color={priorityCfg.color} />
-                  <Text style={[styles.priorityText, { color: priorityCfg.color }]}>
-                    {priorityCfg.label}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
-              </View>
-              <Text style={styles.statusTitle}>You are currently in the queue</Text>
-              <Text style={styles.statusSub}>
-                Position #{activeCase.queuePosition || '—'} · Est. wait: {activeCase.estimatedWait || 'Calculating...'}
-              </Text>
-              {activeCase.aiReasoning && (
-                <Text style={styles.statusReason} numberOfLines={2}>
-                  {activeCase.aiReasoning}
-                </Text>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <View style={[styles.statusCard, { borderLeftColor: COLORS.low }]}>
-              <View style={[styles.priorityBadge, { backgroundColor: COLORS.lowLight }]}>
-                <Ionicons name="checkmark-circle" size={14} color={COLORS.low} />
-                <Text style={[styles.priorityText, { color: COLORS.low }]}>No Active Cases</Text>
-              </View>
-              <Text style={styles.statusTitle}>Not currently in queue</Text>
-              <Text style={styles.statusSub}>Use "Check Symptoms" to start a triage assessment</Text>
-            </View>
-          )}
-
-          {/* Quick Actions */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
+        {loading ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={COLORS.primary} />
           </View>
-          <View style={styles.quickActionsGrid}>
-            {QUICK_ACTIONS.map(action => (
+        ) : careItems.length === 0 ? (
+          <View style={styles.emptyTimeline}>
+            <Ionicons name="calendar-outline" size={32} color={COLORS.textTertiary} />
+            <Text style={styles.emptyText}>No upcoming care items yet</Text>
+            <Text style={styles.emptySub}>Start an assessment to begin your care journey</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.timelineScroll}>
+            {careItems.map(item => (
               <TouchableOpacity
-                key={action.id}
-                style={styles.quickActionCard}
-                onPress={() => handleQuickAction(action)}
-                activeOpacity={0.8}>
-                <View style={[styles.quickActionIcon, { backgroundColor: `${action.color}15` }]}>
-                  <Ionicons name={action.icon} size={26} color={action.color} />
+                key={item.id}
+                style={styles.timelineCard}
+                onPress={() => navigation.getParent()?.jumpTo('journey')}
+                activeOpacity={0.85}>
+                <View style={[styles.timelineIcon, { backgroundColor: item.iconBg }]}>
+                  <Ionicons name={item.icon} size={18} color={item.iconColor} />
                 </View>
-                <Text style={styles.quickActionLabel}>{action.label}</Text>
+                <Text style={styles.timelineTitle} numberOfLines={2}>{item.title}</Text>
+                <Text style={styles.timelineMeta}>{item.meta}</Text>
+                {item.badge ? (
+                  <View style={[styles.timelineBadge, { backgroundColor: item.badge.bg }]}>
+                    <Text style={[styles.timelineBadgeText, { color: item.badge.color }]}>
+                      {item.badge.label}
+                    </Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
+        )}
 
-          {/* Recent Visits */}
-          <View style={[styles.sectionHeader, { marginTop: 8 }]}>
-            <Text style={styles.sectionTitle}>Recent Visits</Text>
+        {/* Community Health Insights */}
+        <View style={styles.insightBanner}>
+          <View style={styles.insightIcon}>
+            <Ionicons name={insight.icon} size={18} color={COLORS.primary} />
           </View>
-          {recentVisits.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Ionicons name="document-text-outline" size={36} color={COLORS.textTertiary} />
-              <Text style={styles.emptyText}>No visits yet</Text>
-              <Text style={styles.emptySub}>Your consultation history will appear here</Text>
+          <View style={styles.insightTextBlock}>
+            <Text style={styles.insightLabel}>Community Health Insights</Text>
+            <Text style={styles.insightText}>{insight.text}</Text>
+          </View>
+        </View>
+
+        {/* Personal Health Snapshot */}
+        <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Personal Health Snapshot</Text>
+        <View style={styles.statsGrid}>
+          <StatTile icon="heart-outline" label="Heart Rate" value="—" unit="bpm" />
+          <StatTile icon="thermometer-outline" label="Temperature" value="—" unit="°C" />
+          <StatTile
+            icon="clipboard-outline"
+            label="Last Assessment"
+            value={formatAssessmentDate(lastAssessment)}
+            compact
+          />
+          <TouchableOpacity style={styles.statTile} activeOpacity={0.8}>
+            <View style={[styles.statIcon, { backgroundColor: COLORS.infoLight }]}>
+              <Ionicons name="watch-outline" size={18} color={COLORS.info} />
             </View>
-          ) : (
-            recentVisits.map(visit => {
-              const cfg = PRIORITY_CONFIG[visit.priority] || PRIORITY_CONFIG.LOW;
-              return (
-                <View key={visit.id} style={styles.visitCard}>
-                  <View style={[styles.visitPriorityDot, { backgroundColor: cfg.color }]} />
-                  <View style={styles.visitInfo}>
-                    <Text style={styles.visitDate}>
-                      {visit.completedAt?.toDate
-                        ? visit.completedAt.toDate().toLocaleDateString('en-ZA')
-                        : 'Recent visit'}
-                    </Text>
-                    <Text style={styles.visitDiagnosis} numberOfLines={1}>
-                      {visit.diagnosis || 'Consultation completed'}
-                    </Text>
-                  </View>
-                  <View style={[styles.smallBadge, { backgroundColor: cfg.bg }]}>
-                    <Text style={[styles.smallBadgeText, { color: cfg.color }]}>{cfg.label}</Text>
-                  </View>
-                </View>
-              );
-            })
-          )}
+            <Text style={styles.statLabel}>Health Device</Text>
+            <Text style={styles.statConnect}>Connect a device</Text>
+          </TouchableOpacity>
+        </View>
 
-          <View style={{ height: 120 }} />
-        </ScrollView>
-      </View>
+        <View style={{ height: LAYOUT.bottomTabClearance }} />
+      </ScrollView>
     </View>
   );
 }
 
+function StatTile({ icon, label, value, unit, compact }) {
+  return (
+    <View style={styles.statTile}>
+      <View style={[styles.statIcon, { backgroundColor: COLORS.primaryVeryLight }]}>
+        <Ionicons name={icon} size={18} color={COLORS.primary} />
+      </View>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue} numberOfLines={compact ? 2 : 1}>
+        {value}{unit ? ` ${unit}` : ''}
+      </Text>
+    </View>
+  );
+}
+
+function formatAssessmentDate(assessment) {
+  if (!assessment?.createdAt?.toDate) return 'None yet';
+  return assessment.createdAt.toDate().toLocaleDateString('en-ZA', {
+    day: 'numeric', month: 'short',
+  });
+}
+
+function buildCareTimeline(cases, profile) {
+  const items = [];
+
+  if (profile.currentMedications) {
+    items.push({
+      id: 'med-reminder',
+      icon: 'medkit-outline',
+      iconColor: COLORS.primary,
+      iconBg: COLORS.primaryVeryLight,
+      title: profile.currentMedications.split(',')[0]?.trim() || 'Medication',
+      meta: 'Daily reminder · 08:00',
+    });
+  }
+
+  cases.slice(0, 4).forEach(c => {
+    const badge = STATUS_BADGE[c.status] || STATUS_BADGE.queued;
+    items.push({
+      id: c.id,
+      icon: 'document-text-outline',
+      iconColor: badge.color,
+      iconBg: badge.bg,
+      title: c.diagnosis || c.symptoms?.substring(0, 40) || 'Health Assessment',
+      meta: c.createdAt?.toDate
+        ? c.createdAt.toDate().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
+        : 'Recent',
+      badge,
+    });
+  });
+
+  if (items.length === 0) {
+    items.push({
+      id: 'follow-up',
+      icon: 'calendar-outline',
+      iconColor: COLORS.info,
+      iconBg: COLORS.infoLight,
+      title: 'Schedule a follow-up',
+      meta: 'After your first assessment',
+    });
+  }
+
+  return items;
+}
+
+const cardShadow = Platform.select({
+  ios:     { shadowColor: '#0F1A14', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10 },
+  android: { elevation: 3 },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
+  scrollContent: { paddingHorizontal: LAYOUT.screenPadding, paddingTop: 20 },
 
-  heroHeader: {
-    paddingTop: Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight || 0) + 20,
-    paddingBottom: 44, paddingHorizontal: 24,
-    position: 'relative', overflow: 'hidden',
+  actionCardWrap: { marginBottom: 28, borderRadius: LAYOUT.cardRadius, overflow: 'hidden', ...cardShadow },
+  actionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    gap: 14,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  heroContent:  { zIndex: 2 },
-  heroTopRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  heroGreeting: { fontSize: 13, color: 'rgba(255,255,255,0.70)', fontWeight: '500' },
-  heroName:     { fontSize: 30, fontWeight: '900', color: COLORS.white, letterSpacing: -0.5 },
-  heroSub:      { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '500', marginTop: 6 },
-  heroDeco1: {
-    position: 'absolute', right: -30, top: -30,
-    width: 160, height: 160, borderRadius: 80,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  actionCardDeco: {
+    position: 'absolute',
+    right: -20,
+    top: -20,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  heroDeco2: {
-    position: 'absolute', right: 50, bottom: -50,
-    width: 120, height: 120, borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+  actionIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  profileBtn: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.20)',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.50)',
-  },
-  profileInitials: { fontSize: 20, fontWeight: '800', color: COLORS.white },
+  actionTextBlock: { flex: 1 },
+  actionTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
+  actionSub: { fontSize: 13, color: 'rgba(255,255,255,0.82)', lineHeight: 18 },
 
-  contentSheet: {
-    flex: 1, backgroundColor: COLORS.backgroundSecondary,
-    borderTopRightRadius: 28, marginTop: -20, overflow: 'hidden',
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  scrollContent: { paddingTop: 20, paddingHorizontal: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary },
+  sectionLink: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
 
-  // Queue status card
-  statusCard: {
-    backgroundColor: COLORS.white, borderRadius: 16, padding: 16,
-    marginBottom: 20, borderLeftWidth: 4,
-    borderLeftColor: COLORS.border,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.07, shadowRadius:10 },
-      android: { elevation: 3 },
-    }),
+  loadingRow: { paddingVertical: 32, alignItems: 'center' },
+  emptyTimeline: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: LAYOUT.cardRadius,
+    padding: 28,
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    ...cardShadow,
   },
-  statusHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  priorityBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  priorityText:  { fontSize: 12, fontWeight: '700' },
-  statusTitle:   { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 4 },
-  statusSub:     { fontSize: 13, color: COLORS.textSecondary },
-  statusReason:  { fontSize: 12, color: COLORS.textTertiary, marginTop: 8, lineHeight: 16 },
+  emptyText: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
+  emptySub: { fontSize: 12, color: COLORS.textSecondary, textAlign: 'center' },
 
-  // Section
-  sectionHeader: { marginBottom: 12 },
-  sectionTitle:  { fontSize: 17, fontWeight: '800', color: COLORS.textPrimary },
-
-  // Quick actions
-  quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 24 },
-  quickActionCard: {
-    width: '47%', backgroundColor: COLORS.white, borderRadius: 16,
-    padding: 16, alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.borderLight,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.06, shadowRadius:8 },
-      android: { elevation: 2 },
-    }),
+  timelineScroll: { gap: 12, paddingBottom: 4, marginBottom: 24 },
+  timelineCard: {
+    width: 160,
+    backgroundColor: '#FFFFFF',
+    borderRadius: LAYOUT.cardRadius,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    ...cardShadow,
   },
-  quickActionIcon:  { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  quickActionLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textPrimary, textAlign: 'center', lineHeight: 16 },
-
-  // Empty state
-  emptyCard: {
-    backgroundColor: COLORS.white, borderRadius: 16, padding: 28,
-    alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: COLORS.borderLight,
+  timelineIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
-  emptyText: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
-  emptySub:  { fontSize: 12, color: COLORS.textSecondary, textAlign: 'center' },
-
-  // Visit cards
-  visitCard: {
-    backgroundColor: COLORS.white, borderRadius: 14, padding: 14,
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10,
-    borderWidth: 1, borderColor: COLORS.borderLight,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:6 },
-      android: { elevation: 2 },
-    }),
+  timelineTitle: { fontSize: 13, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 4, lineHeight: 17 },
+  timelineMeta: { fontSize: 11, color: COLORS.textTertiary, fontWeight: '500' },
+  timelineBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
   },
-  visitPriorityDot: { width: 10, height: 10, borderRadius: 5 },
-  visitInfo:        { flex: 1 },
-  visitDate:        { fontSize: 11, color: COLORS.textTertiary, fontWeight: '500', marginBottom: 2 },
-  visitDiagnosis:   { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary },
-  smallBadge:       { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  smallBadgeText:   { fontSize: 10, fontWeight: '700' },
+  timelineBadgeText: { fontSize: 10, fontWeight: '700' },
+
+  insightBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: COLORS.backgroundTertiary,
+    borderRadius: LAYOUT.cardRadius,
+    padding: 14,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  insightIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insightTextBlock: { flex: 1 },
+  insightLabel: { fontSize: 11, fontWeight: '700', color: COLORS.primary, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3 },
+  insightText: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 19 },
+
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 8,
+  },
+  statTile: {
+    width: '47%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: LAYOUT.cardRadius,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    ...cardShadow,
+  },
+  statIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  statLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 },
+  statValue: { fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
+  statConnect: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
 });

@@ -154,24 +154,22 @@ export default function TriageResultScreen({ navigation, route }) {
           <View style={styles.actionsSection}>
             <TouchableOpacity
               style={styles.primaryAction}
-              onPress={() => navigation.getParent?.()?.jumpTo('queue') || navigation.navigate('Main')}
+              onPress={() => navigation.getParent?.()?.jumpTo('journey') || navigation.navigate('Main', { tab: 'journey' })}
               activeOpacity={0.85}>
               <LinearGradient
                 colors={cfg.gradient}
                 style={styles.primaryActionGrad}>
-                <Ionicons name={cfg.actionIcon} size={20} color={COLORS.white} />
-                <Text style={styles.primaryActionText}>
-                  {priority === 'CRITICAL' ? 'Alert a Nurse Now' : 'View My Queue Position'}
-                </Text>
+                <Ionicons name="git-network-outline" size={20} color={COLORS.white} />
+                <Text style={styles.primaryActionText}>View in Health Journey</Text>
               </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.secondaryAction}
-              onPress={() => navigation.navigate('Main')}
+              onPress={() => navigation.getParent?.()?.jumpTo('assessment') || navigation.navigate('Main', { tab: 'assessment' })}
               activeOpacity={0.8}>
-              <Ionicons name="home-outline" size={18} color={COLORS.textSecondary} />
-              <Text style={styles.secondaryActionText}>Back to Home</Text>
+              <Ionicons name="sparkles-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.secondaryActionText}>Start New Assessment</Text>
             </TouchableOpacity>
           </View>
 
