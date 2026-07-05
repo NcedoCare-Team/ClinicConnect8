@@ -1,5 +1,5 @@
 // src/screens/main/MainScreen.js
-// NcedoCare patient app — 4-tab navigation (My Care · Assessment · Health Journey · Profile)
+// NcedoCare patient app — 5-tab navigation with elevated active tab
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -9,17 +9,30 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 
-import HomeScreen         from './HomeScreen';
-import SmartChatScreen    from './SmartChatScreen';
-import HealthRecordScreen from './HealthRecordScreen';
-import SettingsScreen     from './SettingsScreen';
+import HomeScreen               from './HomeScreen';
+import SmartChatScreen          from './SmartChatScreen';
+import HealthRecordScreen       from './HealthRecordScreen';
+import CommunityInsightsScreen  from './CommunityInsightsScreen';
+import SettingsScreen           from './SettingsScreen';
 
 const TABS = [
-  { id: 'home',       name: 'My Care',        icon: 'heart',         iconOutline: 'heart-outline'         },
-  { id: 'assessment', name: 'Assessment',     icon: 'sparkles',      iconOutline: 'sparkles-outline',      action: true },
-  { id: 'journey',    name: 'Health Journey', icon: 'git-network',   iconOutline: 'git-network-outline'   },
-  { id: 'profile',    name: 'Profile',        icon: 'person',        iconOutline: 'person-outline'        },
+  { id: 'home',       name: 'My Care',    short: 'Care',     icon: 'heart',         iconOutline: 'heart-outline'         },
+  { id: 'assessment', name: 'Assessment', short: 'Assess',   icon: 'sparkles',      iconOutline: 'sparkles-outline'      },
+  { id: 'journey',    name: 'Journey',    short: 'Journey',  icon: 'git-network',   iconOutline: 'git-network-outline'   },
+  { id: 'insights',   name: 'Insights',   short: 'Insights', icon: 'newspaper',     iconOutline: 'newspaper-outline'     },
+  { id: 'profile',    name: 'Profile',    short: 'Profile',  icon: 'person',        iconOutline: 'person-outline'        },
 ];
+
+const TAB_MAP = {
+  home:       HomeScreen,
+  assessment: SmartChatScreen,
+  journey:    HealthRecordScreen,
+  insights:   CommunityInsightsScreen,
+  profile:    SettingsScreen,
+  symptoms:   SmartChatScreen,
+  records:    HealthRecordScreen,
+  queue:      HomeScreen,
+};
 
 export default function MainScreen({ navigation, route }) {
   const [activeTab, setActiveTab] = useState('home');
@@ -30,23 +43,18 @@ export default function MainScreen({ navigation, route }) {
         : route.params.tab === 'records' ? 'journey'
         : route.params.tab === 'queue' ? 'home'
         : route.params.tab;
-      setActiveTab(mapped);
+      if (TAB_MAP[mapped]) setActiveTab(mapped);
     }
   }, [route?.params?.tab]);
 
-  const ActiveComponent = {
-    home:       HomeScreen,
-    assessment: SmartChatScreen,
-    journey:    HealthRecordScreen,
-    profile:    SettingsScreen,
-  }[activeTab];
+  const ActiveComponent = TAB_MAP[activeTab];
 
   const jumpTo = (tabId) => {
     const mapped = tabId === 'symptoms' ? 'assessment'
       : tabId === 'records' ? 'journey'
       : tabId === 'queue' ? 'home'
       : tabId;
-    setActiveTab(mapped);
+    if (TAB_MAP[mapped]) setActiveTab(mapped);
   };
 
   const getProps = () => ({
@@ -70,42 +78,21 @@ export default function MainScreen({ navigation, route }) {
         <View style={styles.tabBar}>
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
-            const isAction = tab.action;
-
-            if (isAction) {
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  style={styles.actionTab}
-                  onPress={() => setActiveTab(tab.id)}
-                  activeOpacity={0.85}>
-                  <View style={[styles.actionBtn, isActive && styles.actionBtnActive]}>
-                    <Ionicons
-                      name={isActive ? tab.icon : tab.iconOutline}
-                      size={24}
-                      color="#FFFFFF"
-                    />
-                  </View>
-                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-                    {tab.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }
-
             return (
               <TouchableOpacity
                 key={tab.id}
-                style={styles.tabItem}
+                style={styles.tabSlot}
                 onPress={() => setActiveTab(tab.id)}
-                activeOpacity={0.7}>
-                <Ionicons
-                  name={isActive ? tab.icon : tab.iconOutline}
-                  size={22}
-                  color={isActive ? COLORS.primary : COLORS.inkLight}
-                />
+                activeOpacity={0.85}>
+                <View style={[styles.tabBtn, isActive && styles.tabBtnActive]}>
+                  <Ionicons
+                    name={isActive ? tab.icon : tab.iconOutline}
+                    size={isActive ? 22 : 20}
+                    color={isActive ? '#FFFFFF' : COLORS.inkLight}
+                  />
+                </View>
                 <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]} numberOfLines={1}>
-                  {tab.name}
+                  {tab.short}
                 </Text>
               </TouchableOpacity>
             );
@@ -130,57 +117,50 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
     ...Platform.select({
-      ios:     { shadowColor: '#0F1A14', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.06, shadowRadius: 12 },
+      ios:     { shadowColor: '#0F172A', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.07, shadowRadius: 12 },
       android: { elevation: 12 },
     }),
   },
   tabBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingBottom: 4,
-    paddingHorizontal: 4,
+    paddingTop: 10,
+    paddingBottom: 2,
+    paddingHorizontal: 2,
   },
-  tabItem: {
+  tabSlot: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 4,
+    gap: 3,
+  },
+  tabBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    minHeight: 52,
-    gap: 4,
+    backgroundColor: 'transparent',
+  },
+  tabBtnActive: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    marginTop: -18,
+    ...Platform.select({
+      ios:     { shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.38, shadowRadius: 8 },
+      android: { elevation: 8 },
+    }),
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '600',
     color: COLORS.inkLight,
     textAlign: 'center',
   },
-  tabLabelActive: { color: COLORS.primary, fontWeight: '700' },
-
-  actionTab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 6,
-    gap: 2,
-  },
-  actionBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -20,
-    ...Platform.select({
-      ios:     { shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8 },
-      android: { elevation: 6 },
-    }),
-  },
-  actionBtnActive: {
-    backgroundColor: COLORS.primaryDark,
-    transform: [{ scale: 1.05 }],
-  },
+  tabLabelActive: { color: COLORS.primary, fontWeight: '800', fontSize: 9 },
 
   bottomSafeArea: {
     height: Platform.OS === 'ios' ? 24 : 8,

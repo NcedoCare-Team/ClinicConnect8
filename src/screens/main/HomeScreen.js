@@ -11,8 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
+import { HOME_INSIGHT_PREVIEW } from '../../constants/communityInsights';
 import { UserProfileService } from '../../services/UserProfileService';
 import { HomeHeader, LAYOUT } from '../../components/layout/ScreenHeader';
+import InsightCard from '../../components/insights/InsightCard';
 
 const STATUS_BADGE = {
   queued:    { label: 'Submitted', color: COLORS.medium,  bg: COLORS.mediumLight  },
@@ -20,35 +22,15 @@ const STATUS_BADGE = {
   completed: { label: 'Closed',    color: COLORS.low,     bg: COLORS.lowLight     },
 };
 
-const INSIGHTS = [
-  { icon: 'leaf-outline', text: 'Flu cases have increased in your community this week.' },
-  { icon: 'water-outline', text: 'Stay hydrated — warmer days are expected this week.' },
-  { icon: 'fitness-outline', text: 'Regular movement supports recovery and wellbeing.' },
-];
-
 export default function HomeScreen({ navigation }) {
-  const [userName,     setUserName]     = useState('');
-  const [facility,     setFacility]     = useState('');
-  const [avatarUri,    setAvatarUri]    = useState(null);
-  const [careItems,    setCareItems]    = useState([]);
-  const [lastAssessment, setLastAssessment] = useState(null);
-  const [loading,      setLoading]      = useState(true);
-  const [insightIndex, setInsightIndex] = useState(0);
+  const [userName,         setUserName]         = useState('');
+  const [facility,         setFacility]         = useState('');
+  const [avatarUri,        setAvatarUri]        = useState(null);
+  const [careItems,        setCareItems]        = useState([]);
+  const [lastAssessment,   setLastAssessment]   = useState(null);
+  const [loading,          setLoading]          = useState(true);
 
-  const greeting = (() => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 17) return 'Good afternoon';
-    return 'Good evening';
-  })();
-
-  useEffect(() => {
-    loadDashboard();
-    const timer = setInterval(() => {
-      setInsightIndex(i => (i + 1) % INSIGHTS.length);
-    }, 8000);
-    return () => clearInterval(timer);
-  }, []);
+  useEffect(() => { loadDashboard(); }, []);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -81,12 +63,11 @@ export default function HomeScreen({ navigation }) {
     Alert.alert('Change Facility', 'Facility selection will be available in a future update.');
   };
 
-  const insight = INSIGHTS[insightIndex];
+  const goToInsights = () => navigation.getParent()?.jumpTo('insights');
 
   return (
     <View style={styles.container}>
       <HomeHeader
-        greeting={greeting}
         userName={userName}
         facility={facility || 'Connect a healthcare facility'}
         avatarUri={avatarUri}
@@ -122,8 +103,28 @@ export default function HomeScreen({ navigation }) {
           </LinearGradient>
         </TouchableOpacity>
 
+        {/* Personal Health Snapshot — directly under action card */}
+        <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Personal Health Snapshot</Text>
+        <View style={styles.statsGrid}>
+          <StatTile icon="heart-outline" label="Heart Rate" value="—" unit="bpm" />
+          <StatTile icon="thermometer-outline" label="Temperature" value="—" unit="°C" />
+          <StatTile
+            icon="clipboard-outline"
+            label="Last Assessment"
+            value={formatAssessmentDate(lastAssessment)}
+            compact
+          />
+          <TouchableOpacity style={styles.statTile} activeOpacity={0.8}>
+            <View style={[styles.statIcon, { backgroundColor: COLORS.infoLight }]}>
+              <Ionicons name="watch-outline" size={18} color={COLORS.info} />
+            </View>
+            <Text style={styles.statLabel}>Health Device</Text>
+            <Text style={styles.statConnect}>Connect a device</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Care Timeline */}
-        <View style={styles.sectionHeader}>
+        <View style={[styles.sectionHeader, { marginTop: 8 }]}>
           <Text style={styles.sectionTitle}>Care Timeline</Text>
           <TouchableOpacity onPress={() => navigation.getParent()?.jumpTo('journey')}>
             <Text style={styles.sectionLink}>View all</Text>
@@ -168,36 +169,24 @@ export default function HomeScreen({ navigation }) {
           </ScrollView>
         )}
 
-        {/* Community Health Insights */}
-        <View style={styles.insightBanner}>
-          <View style={styles.insightIcon}>
-            <Ionicons name={insight.icon} size={18} color={COLORS.primary} />
-          </View>
-          <View style={styles.insightTextBlock}>
-            <Text style={styles.insightLabel}>Community Health Insights</Text>
-            <Text style={styles.insightText}>{insight.text}</Text>
-          </View>
-        </View>
-
-        {/* Personal Health Snapshot */}
-        <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Personal Health Snapshot</Text>
-        <View style={styles.statsGrid}>
-          <StatTile icon="heart-outline" label="Heart Rate" value="—" unit="bpm" />
-          <StatTile icon="thermometer-outline" label="Temperature" value="—" unit="°C" />
-          <StatTile
-            icon="clipboard-outline"
-            label="Last Assessment"
-            value={formatAssessmentDate(lastAssessment)}
-            compact
-          />
-          <TouchableOpacity style={styles.statTile} activeOpacity={0.8}>
-            <View style={[styles.statIcon, { backgroundColor: COLORS.infoLight }]}>
-              <Ionicons name="watch-outline" size={18} color={COLORS.info} />
-            </View>
-            <Text style={styles.statLabel}>Health Device</Text>
-            <Text style={styles.statConnect}>Connect a device</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Community Health Insights — 3 preview cards */}
+        <Text style={[styles.sectionTitle, { marginBottom: 12, marginTop: 4 }]}>
+          Community Health Insights
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.insightsScroll}>
+          {HOME_INSIGHT_PREVIEW.map((insight, index) => (
+            <InsightCard
+              key={insight.id}
+              insight={insight}
+              style={styles.insightCard}
+              showViewMore={index === HOME_INSIGHT_PREVIEW.length - 1}
+              onViewMore={goToInsights}
+            />
+          ))}
+        </ScrollView>
 
         <View style={{ height: LAYOUT.bottomTabClearance }} />
       </ScrollView>
@@ -270,7 +259,7 @@ function buildCareTimeline(cases, profile) {
 }
 
 const cardShadow = Platform.select({
-  ios:     { shadowColor: '#0F1A14', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10 },
+  ios:     { shadowColor: '#0F172A', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10 },
   android: { elevation: 3 },
 });
 
@@ -278,7 +267,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
   scrollContent: { paddingHorizontal: LAYOUT.screenPadding, paddingTop: 20 },
 
-  actionCardWrap: { marginBottom: 28, borderRadius: LAYOUT.cardRadius, overflow: 'hidden', ...cardShadow },
+  actionCardWrap: { marginBottom: 24, borderRadius: LAYOUT.cardRadius, overflow: 'hidden', ...cardShadow },
   actionCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -316,6 +305,33 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary },
   sectionLink: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 28,
+  },
+  statTile: {
+    width: '47%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: LAYOUT.cardRadius,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    ...cardShadow,
+  },
+  statIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  statLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 },
+  statValue: { fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
+  statConnect: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
 
   loadingRow: { paddingVertical: 32, alignItems: 'center' },
   emptyTimeline: {
@@ -361,53 +377,6 @@ const styles = StyleSheet.create({
   },
   timelineBadgeText: { fontSize: 10, fontWeight: '700' },
 
-  insightBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    backgroundColor: COLORS.backgroundTertiary,
-    borderRadius: LAYOUT.cardRadius,
-    padding: 14,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-  },
-  insightIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  insightTextBlock: { flex: 1 },
-  insightLabel: { fontSize: 11, fontWeight: '700', color: COLORS.primary, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3 },
-  insightText: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 19 },
-
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 8,
-  },
-  statTile: {
-    width: '47%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: LAYOUT.cardRadius,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    ...cardShadow,
-  },
-  statIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  statLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 },
-  statValue: { fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
-  statConnect: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  insightsScroll: { gap: 12, paddingBottom: 4, marginBottom: 8 },
+  insightCard: { width: 280 },
 });

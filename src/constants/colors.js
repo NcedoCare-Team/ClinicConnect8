@@ -1,40 +1,39 @@
-// src/constants/colors.js
-// NcedoCare — Healthcare Green/Teal Palette
-// Primary: Forest Green  |  Priority: Red/Orange/Yellow/Green  |  BG: Clean White
+// NcedoCare — Hospitality Blue Palette
+// Primary: Trust Blue  |  Priority: Red/Orange/Amber/Green  |  BG: Clean White
 
 export const COLORS = {
-  // ── Primary Green (Brand) ─────────────────────────────────
-  primary:          '#1B6B47',   // Forest green — main brand CTA
-  primaryDark:      '#134D33',   // Deep green   — pressed / dark variant
-  primaryLight:     '#2D8A5E',   // Mid green    — light accents
-  primaryVeryLight: '#EBF5EF',   // Near-white green tint — card backgrounds
-  primaryGlow:      '#A8D5BC',   // Green highlight — borders / glows
+  // ── Primary Blue (Brand / Hospitality) ────────────────────
+  primary:          '#2563EB',   // Royal blue — main brand CTA
+  primaryDark:      '#1D4ED8',   // Deep blue   — pressed / dark variant
+  primaryLight:     '#3B82F6',   // Mid blue    — light accents
+  primaryVeryLight: '#EFF6FF',   // Near-white blue tint — card backgrounds
+  primaryGlow:      '#BFDBFE',   // Blue highlight — borders / glows
 
   // ── Ink / Dark ────────────────────────────────────────────
-  ink:              '#0A0A0F',   // True black
-  inkDark:          '#0F1A14',   // Rich dark green-black — text/icons on dark
-  inkSoft:          '#1A2E22',   // Soft dark forest      — secondary dark bg
-  inkMid:           '#2E4A38',   // Mid forest            — metadata text
-  inkLight:         '#5A7A67',   // Light forest slate    — placeholder / hint
+  ink:              '#0A0A0F',
+  inkDark:          '#0F172A',   // Slate navy — text/icons on dark
+  inkSoft:          '#1E293B',   // Soft slate — secondary dark bg
+  inkMid:           '#334155',   // Mid slate — metadata text
+  inkLight:         '#64748B',   // Light slate — placeholder / hint
 
   // ── Background ────────────────────────────────────────────
   background:           '#FFFFFF',
-  backgroundSecondary:  '#F4FAF6',
-  backgroundTertiary:   '#E8F4EC',
+  backgroundSecondary:  '#F8FAFC',
+  backgroundTertiary:   '#F1F5F9',
 
   // ── Text ──────────────────────────────────────────────────
-  textPrimary:   '#0F1A14',  // Near-black  — headings
-  textSecondary: '#3D5C48',  // Dark green-slate — body
-  textTertiary:  '#7A9A85',  // Light green-slate — hints / metadata
+  textPrimary:   '#0F172A',
+  textSecondary: '#475569',
+  textTertiary:  '#94A3B8',
 
   // ── Triage Priority Colors ────────────────────────────────
-  critical:      '#DC2626',   // Red   — CRITICAL priority
+  critical:      '#DC2626',
   criticalLight: '#FEF2F2',
-  high:          '#EA580C',   // Orange — HIGH priority
+  high:          '#EA580C',
   highLight:     '#FFF7ED',
-  medium:        '#D97706',   // Amber  — MEDIUM priority
+  medium:        '#D97706',
   mediumLight:   '#FFFBEB',
-  low:           '#16A34A',   // Green  — LOW priority
+  low:           '#16A34A',
   lowLight:      '#F0FDF4',
 
   // ── Status ────────────────────────────────────────────────
@@ -48,8 +47,8 @@ export const COLORS = {
   infoLight:    '#F0F9FF',
 
   // ── UI Chrome ─────────────────────────────────────────────
-  border:       '#D1E8D9',
-  borderLight:  '#EBF5EF',
+  border:       '#CBD5E1',
+  borderLight:  '#E2E8F0',
   white:        '#FFFFFF',
   black:        '#000000',
   transparent:  'transparent',

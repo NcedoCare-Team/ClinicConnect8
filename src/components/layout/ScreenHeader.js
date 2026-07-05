@@ -1,4 +1,4 @@
-// Shared screen header — clean white band matching onboarding aesthetic.
+// Shared screen header — logo-led, hospitality blue aesthetic.
 
 import React from 'react';
 import {
@@ -7,9 +7,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
+import AppLogo from './AppLogo';
+
+const HEADER_GRADIENT = ['rgba(37,99,235,0.07)', 'rgba(37,99,235,0.02)', 'transparent'];
 
 export function HomeHeader({
-  greeting,
   userName,
   facility,
   avatarUri,
@@ -21,30 +23,10 @@ export function HomeHeader({
   return (
     <View style={styles.homeHeader}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <LinearGradient
-        colors={['rgba(27,107,71,0.06)', 'rgba(27,107,71,0.01)', 'transparent']}
-        style={styles.homeGradient}
-      />
+      <LinearGradient colors={HEADER_GRADIENT} style={styles.homeGradient} />
 
       <View style={styles.homeTopRow}>
-        <View style={styles.homeTextBlock}>
-          <Text style={styles.greeting}>
-            {greeting}, {userName}
-          </Text>
-          <View style={styles.facilityRow}>
-            <View style={styles.facilityChip}>
-              <Ionicons name="business-outline" size={13} color={COLORS.primary} />
-              <Text style={styles.facilityText} numberOfLines={1}>
-                {facility || 'No facility connected'}
-              </Text>
-            </View>
-            {onChangeFacility && (
-              <TouchableOpacity onPress={onChangeFacility} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
-                <Text style={styles.changeLink}>Change</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        <AppLogo size="md" showTagline />
 
         <TouchableOpacity style={styles.avatarBtn} onPress={onProfilePress} activeOpacity={0.8}>
           {avatarUri ? (
@@ -55,6 +37,20 @@ export function HomeHeader({
             </LinearGradient>
           )}
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.facilityRow}>
+        <View style={styles.facilityChip}>
+          <Ionicons name="business-outline" size={13} color={COLORS.primary} />
+          <Text style={styles.facilityText} numberOfLines={1}>
+            {facility || 'Connect a healthcare facility'}
+          </Text>
+        </View>
+        {onChangeFacility && (
+          <TouchableOpacity onPress={onChangeFacility} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
+            <Text style={styles.changeLink}>Change</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -67,26 +63,28 @@ export function ScreenHeader({
   onRightPress,
   statusDot,
   statusLabel,
+  useLogo,
 }) {
   return (
     <View style={styles.screenHeader}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <LinearGradient
-        colors={['rgba(27,107,71,0.06)', 'rgba(27,107,71,0.01)', 'transparent']}
-        style={styles.homeGradient}
-      />
+      <LinearGradient colors={HEADER_GRADIENT} style={styles.homeGradient} />
 
       <View style={styles.screenTopRow}>
-        <View style={styles.screenTextBlock}>
-          <Text style={styles.screenTitle}>{title}</Text>
-          {subtitle ? <Text style={styles.screenSubtitle}>{subtitle}</Text> : null}
-          {statusLabel ? (
-            <View style={styles.statusRow}>
-              {statusDot !== false && <View style={styles.onlineDot} />}
-              <Text style={styles.statusText}>{statusLabel}</Text>
-            </View>
-          ) : null}
-        </View>
+        {useLogo ? (
+          <AppLogo size="sm" />
+        ) : (
+          <View style={styles.screenTextBlock}>
+            <Text style={styles.screenTitle}>{title}</Text>
+            {subtitle ? <Text style={styles.screenSubtitle}>{subtitle}</Text> : null}
+            {statusLabel ? (
+              <View style={styles.statusRow}>
+                {statusDot !== false && <View style={styles.onlineDot} />}
+                <Text style={styles.statusText}>{statusLabel}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
 
         {rightIcon && (
           <TouchableOpacity style={styles.iconBtn} onPress={onRightPress} activeOpacity={0.7}>
@@ -94,6 +92,10 @@ export function ScreenHeader({
           </TouchableOpacity>
         )}
       </View>
+
+      {useLogo && title ? (
+        <Text style={styles.logoScreenSubtitle}>{subtitle || title}</Text>
+      ) : null}
     </View>
   );
 }
@@ -104,10 +106,7 @@ export function ProfileHeader({ displayName, facility, avatarUri, onAvatarPress 
   return (
     <View style={styles.profileHeader}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <LinearGradient
-        colors={['rgba(27,107,71,0.06)', 'rgba(27,107,71,0.01)', 'transparent']}
-        style={styles.homeGradient}
-      />
+      <LinearGradient colors={HEADER_GRADIENT} style={styles.homeGradient} />
 
       <TouchableOpacity style={styles.profileAvatarWrap} onPress={onAvatarPress} activeOpacity={0.85}>
         {avatarUri ? (
@@ -133,7 +132,7 @@ export function ProfileHeader({ displayName, facility, avatarUri, onAvatarPress 
 
 export const LAYOUT = {
   screenPadding: 20,
-  bottomTabClearance: 100,
+  bottomTabClearance: 108,
   cardRadius: 16,
 };
 
@@ -141,7 +140,7 @@ const styles = StyleSheet.create({
   homeHeader: {
     backgroundColor: '#FFFFFF',
     paddingTop: Platform.OS === 'ios' ? 58 : (StatusBar.currentHeight || 0) + 16,
-    paddingBottom: 16,
+    paddingBottom: 14,
     paddingHorizontal: LAYOUT.screenPadding,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
@@ -155,17 +154,10 @@ const styles = StyleSheet.create({
   },
   homeTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
-  },
-  homeTextBlock: { flex: 1 },
-  greeting: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    letterSpacing: -0.3,
-    marginBottom: 10,
+    gap: 12,
+    marginBottom: 12,
   },
   facilityRow: {
     flexDirection: 'row',
@@ -181,7 +173,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
-    maxWidth: '75%',
+    maxWidth: '78%',
   },
   facilityText: {
     fontSize: 12,
@@ -196,15 +188,15 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   avatarBtn: { borderRadius: 24, overflow: 'hidden' },
-  avatarImage: { width: 48, height: 48, borderRadius: 24 },
+  avatarImage: { width: 44, height: 44, borderRadius: 22 },
   avatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
+  avatarInitial: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
 
   screenHeader: {
     backgroundColor: '#FFFFFF',
@@ -216,7 +208,7 @@ const styles = StyleSheet.create({
   },
   screenTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
   screenTextBlock: { flex: 1 },
@@ -231,6 +223,12 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 4,
     lineHeight: 18,
+  },
+  logoScreenSubtitle: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 10,
+    fontWeight: '500',
   },
   statusRow: {
     flexDirection: 'row',

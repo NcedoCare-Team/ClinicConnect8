@@ -87,7 +87,7 @@ export default function OnboardingScreen({ navigation }) {
     <View style={s.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <LinearGradient
-        colors={['rgba(27,107,71,0.07)', 'rgba(27,107,71,0.01)', 'transparent']}
+        colors={['rgba(37,99,235,0.07)', 'rgba(37,99,235,0.01)', 'transparent']}
         style={s.topGradient}
       />
 
