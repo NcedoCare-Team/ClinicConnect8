@@ -25,8 +25,8 @@ function HeaderDecorations({ light }) {
 }
 
 export function HomeHeader({ notificationCount = 3, onNotificationPress }) {
-  const badgeLabel = notificationCount > 9 ? '9+' : String(notificationCount);
-  const showBadge = notificationCount > 0;
+  // const badgeLabel = notificationCount > 9 ? '9+' : String(notificationCount);
+  // const showBadge = notificationCount > 0;
 
   return (
     <View style={styles.homeHeaderWrap}>
@@ -41,6 +41,7 @@ export function HomeHeader({ notificationCount = 3, onNotificationPress }) {
         <View style={styles.homeTopRow}>
           <AppLogo size="md" showTagline light />
 
+          {/* Notification icon — disabled for now
           <TouchableOpacity
             style={styles.notifBtn}
             onPress={onNotificationPress}
@@ -52,6 +53,7 @@ export function HomeHeader({ notificationCount = 3, onNotificationPress }) {
               </View>
             )}
           </TouchableOpacity>
+          */}
         </View>
       </LinearGradient>
     </View>

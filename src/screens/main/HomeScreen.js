@@ -28,7 +28,7 @@ export default function HomeScreen({ navigation }) {
   const [careItems,        setCareItems]        = useState([]);
   const [lastAssessment,   setLastAssessment]   = useState(null);
   const [loading,          setLoading]          = useState(true);
-  const [notificationCount, setNotificationCount] = useState(3);
+  // const [notificationCount, setNotificationCount] = useState(3);
 
   useEffect(() => { loadDashboard(); }, []);
 
@@ -60,9 +60,9 @@ export default function HomeScreen({ navigation }) {
     Alert.alert('Change Facility', 'Facility selection will be available in a future update.');
   };
 
-  const handleNotifications = () => {
-    Alert.alert('Notifications', 'Your care updates and reminders will appear here.');
-  };
+  // const handleNotifications = () => {
+  //   Alert.alert('Notifications', 'Your care updates and reminders will appear here.');
+  // };
 
   const goToInsights = () => navigation.getParent()?.jumpTo('insights');
 
@@ -72,8 +72,8 @@ export default function HomeScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <HomeHeader
-        notificationCount={notificationCount}
-        onNotificationPress={handleNotifications}
+        // notificationCount={notificationCount}
+        // onNotificationPress={handleNotifications}
       />
 
       <ScrollView

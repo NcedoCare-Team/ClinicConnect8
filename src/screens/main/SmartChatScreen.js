@@ -46,7 +46,6 @@ function AssessmentHeader() {
           </View>
         </View>
       </LinearGradient>
-      <View style={styles.headerDivider} />
     </View>
   );
 }
@@ -157,31 +156,29 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
 
   headerWrap: {
-    overflow: 'hidden',
     backgroundColor: '#FFFFFF',
-    zIndex: 10,
+    borderBottomWidth: 1.5,
+    borderBottomColor: COLORS.primary,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
         shadowColor: '#0F172A',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
+        shadowOpacity: 0.06,
+        shadowRadius: 10,
       },
-      android: { elevation: 6 },
+      android: { elevation: 4 },
     }),
   },
   headerGradient: {
     paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 0) + 16,
-    paddingBottom: 28,
+    paddingBottom: 26,
     paddingHorizontal: LAYOUT.screenPadding,
     alignItems: 'center',
     position: 'relative',
     overflow: 'hidden',
-  },
-  headerDivider: {
-    height: 1,
-    backgroundColor: COLORS.borderLight,
-    marginHorizontal: LAYOUT.screenPadding,
   },
   decoCircle1: {
     position: 'absolute',

@@ -1,58 +1,82 @@
-// Facility connection row — blue accent line + icon, no card container.
+// Facility connection banner — card with gradient, blue accent line + icon.
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
+import { LAYOUT } from '../layout/ScreenHeader';
 
 export default function FacilityBanner({ facility, onPress, onChangePress }) {
   const connected = Boolean(facility && !facility.startsWith('Connect'));
 
   return (
-    <View style={styles.row}>
-      <View style={styles.leftAccent} />
+    <View style={styles.wrap}>
+      <LinearGradient
+        colors={['#FFFFFF', COLORS.primaryVeryLight]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.card}>
+        <View style={styles.leftAccent} />
+        <TouchableOpacity style={styles.mainTap} onPress={onPress} activeOpacity={0.88}>
+          <View style={styles.iconRing}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.primaryDark]}
+              style={styles.iconGradient}>
+              <Ionicons name="business" size={20} color="#FFFFFF" />
+            </LinearGradient>
+          </View>
 
-      <TouchableOpacity style={styles.mainTap} onPress={onPress} activeOpacity={0.7}>
-        <View style={styles.iconWrap}>
-          <Ionicons name="business" size={20} color={COLORS.primary} />
-        </View>
+          <View style={styles.body}>
+            <Text style={styles.eyebrow}>
+              {connected ? 'Connected facility' : 'Healthcare facility'}
+            </Text>
+            <Text style={styles.facilityName} numberOfLines={1}>
+              {facility || 'Connect a healthcare facility'}
+            </Text>
+            {!connected && (
+              <Text style={styles.hint}>Tap to link your primary care facility</Text>
+            )}
+          </View>
+        </TouchableOpacity>
 
-        <View style={styles.body}>
-          <Text style={styles.eyebrow}>
-            {connected ? 'Connected facility' : 'Healthcare facility'}
-          </Text>
-          <Text style={styles.facilityName} numberOfLines={1}>
-            {facility || 'Connect a healthcare facility'}
-          </Text>
-          {!connected && (
-            <Text style={styles.hint}>Tap to link your primary care facility</Text>
-          )}
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.changeBtn}
-        onPress={onChangePress}
-        hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
-        <Text style={styles.changeText}>{connected ? 'Change' : 'Connect'}</Text>
-        <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.changeBtn}
+          onPress={onChangePress}
+          hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
+          <Text style={styles.changeText}>{connected ? 'Change' : 'Connect'}</Text>
+          <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
+        </TouchableOpacity>
+      </LinearGradient>
     </View>
   );
 }
 
+const cardShadow = Platform.select({
+  ios:     { shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12 },
+  android: { elevation: 4 },
+});
+
 const styles = StyleSheet.create({
-  row: {
+  wrap: { marginBottom: 14, borderRadius: LAYOUT.cardRadius, ...cardShadow },
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 18,
+    borderRadius: LAYOUT.cardRadius,
+    paddingVertical: 14,
+    paddingRight: 14,
+    paddingLeft: 6,
+    borderWidth: 1,
+    borderColor: COLORS.primaryGlow,
+    overflow: 'hidden',
     gap: 12,
   },
   leftAccent: {
     width: 4,
-    height: 52,
+    alignSelf: 'stretch',
     backgroundColor: COLORS.primary,
     borderRadius: 4,
+    marginVertical: 4,
   },
   mainTap: {
     flex: 1,
@@ -60,7 +84,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  iconWrap: {
+  iconRing: {
+    padding: 3,
+    borderRadius: 16,
+    backgroundColor: 'rgba(37,99,235,0.12)',
+  },
+  iconGradient: {
     width: 40,
     height: 40,
     borderRadius: 12,
@@ -92,7 +121,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    paddingVertical: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   changeText: {
     fontSize: 12,

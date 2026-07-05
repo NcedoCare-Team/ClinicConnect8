@@ -1,10 +1,10 @@
 // src/screens/main/MainScreen.js
 // NcedoCare patient app — 5-tab navigation with elevated active tab
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Platform, StatusBar, Animated, Dimensions,
+  Platform, StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
@@ -14,8 +14,6 @@ import SmartChatScreen          from './SmartChatScreen';
 import HealthRecordScreen       from './HealthRecordScreen';
 import CommunityInsightsScreen  from './CommunityInsightsScreen';
 import SettingsScreen           from './SettingsScreen';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const TABS = [
   { id: 'home',       name: 'My Care',    short: 'Care',     icon: 'heart',         iconOutline: 'heart-outline'         },
@@ -45,31 +43,12 @@ function mapTab(tabId) {
 
 export default function MainScreen({ navigation, route }) {
   const [activeTab, setActiveTab] = useState('home');
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const prevTabRef = useRef('home');
 
   const changeTab = useCallback((tabId) => {
     const mapped = mapTab(tabId);
-    if (!TAB_MAP[mapped]) return;
-
-    const fromCareToAssess = prevTabRef.current === 'home' && mapped === 'assessment';
-
-    if (fromCareToAssess) {
-      slideAnim.setValue(SCREEN_WIDTH);
-      setActiveTab(mapped);
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 72,
-        friction: 13,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      slideAnim.setValue(0);
-      setActiveTab(mapped);
-    }
-
-    prevTabRef.current = mapped;
-  }, [slideAnim]);
+    if (!TAB_MAP[mapped] || mapped === activeTab) return;
+    setActiveTab(mapped);
+  }, [activeTab]);
 
   useEffect(() => {
     if (route?.params?.tab) changeTab(route.params.tab);
@@ -92,10 +71,9 @@ export default function MainScreen({ navigation, route }) {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      <Animated.View
-        style={[styles.contentContainer, { transform: [{ translateX: slideAnim }] }]}>
+      <View style={styles.contentContainer}>
         {ActiveComponent && <ActiveComponent key={activeTab} {...getProps()} />}
-      </Animated.View>
+      </View>
 
       <View style={styles.tabBarWrap}>
         <View style={styles.tabBar}>
