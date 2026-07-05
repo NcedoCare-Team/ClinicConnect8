@@ -29,7 +29,7 @@ export default function AppLogo({ size = 'md', showTagline = false }) {
           Ncedo<Text style={styles.titleAccent}>Care</Text>
         </Text>
         {showTagline && (
-          <Text style={styles.tagline}>A connected healthcare journey</Text>
+          <Text style={styles.tagline}>Smarter care for stronger communities</Text>
         )}
       </View>
     </View>
