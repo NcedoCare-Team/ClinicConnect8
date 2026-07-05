@@ -12,7 +12,8 @@ import { UserProfileService } from '../services/UserProfileService';
 import LoginScreen        from '../screens/auth/LoginScreen';
 import MainScreen         from '../screens/main/MainScreen';
 import OnboardingScreen   from '../screens/main/OnboardingScreen';
-import TriageResultScreen from '../screens/main/TriageResultScreen';
+import TriageResultScreen    from '../screens/main/TriageResultScreen';
+import ChatConversationScreen from '../screens/main/ChatConversationScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -69,6 +70,11 @@ export default function AppNavigator() {
               <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ animation: 'fade' }} />
             )}
             <Stack.Screen name="Main" component={MainScreen} />
+            <Stack.Screen
+              name="ChatConversation"
+              component={ChatConversationScreen}
+              options={{ animation: 'slide_from_right', gestureEnabled: true }}
+            />
             <Stack.Screen
               name="TriageResult"
               component={TriageResultScreen}

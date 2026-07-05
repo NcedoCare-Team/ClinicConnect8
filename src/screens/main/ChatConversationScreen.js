@@ -98,7 +98,7 @@ export default function ChatConversationScreen({ route, navigation }) {
     const newConversationId = `conv_${Date.now()}`;
     const newConversation = {
       id: newConversationId,
-      title: 'New Conversation',
+      title: 'Health Assessment',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastMessage: '',
@@ -298,18 +298,17 @@ export default function ChatConversationScreen({ route, navigation }) {
         {conversationId ? 'No messages yet' : 'Start a conversation'}
       </Text>
       <Text style={styles.emptySubtitle}>
-        {conversationId 
-          ? 'Send a message to start chatting with VisionAlly AI'
-          : 'Ask me anything about careers, job interviews, or professional development'
-        }
+        {conversationId
+          ? 'Send a message to start your health assessment with NcedoCare AI'
+          : 'Describe how you feel — symptoms, duration, and any concerns'}
       </Text>
-      
+
       <View style={styles.suggestionContainer}>
         <Text style={styles.suggestionTitle}>Try asking:</Text>
         {[
-          "How should I prepare for this job interview?",
-          "Can you help me improve my CV?",
-          "What workplace accommodations should I request?"
+          'I have had a fever and cough for two days',
+          'I feel chest tightness when I walk',
+          'Can you help me understand my symptoms?',
         ].map((suggestion, index) => (
           <TouchableOpacity
             key={index}
@@ -369,10 +368,10 @@ export default function ChatConversationScreen({ route, navigation }) {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <MaterialCommunityIcons 
-                    name="robot-outline" 
-                    size={26} 
-                    color={COLORS.white} 
+                  <MaterialCommunityIcons
+                    name="sparkles"
+                    size={26}
+                    color={COLORS.white}
                   />
                 </LinearGradient>
                 <View style={styles.logoShadow} />
@@ -380,13 +379,13 @@ export default function ChatConversationScreen({ route, navigation }) {
 
               <View style={styles.brandTextContainer}>
                 <View style={styles.brandNameRow}>
-                  <Text style={styles.visionAllyText}>VisionAlly</Text>
+                  <Text style={styles.brandNameText}>NcedoCare</Text>
                   <View style={styles.aiChip}>
                     <Text style={styles.aiChipText}>AI</Text>
                   </View>
                 </View>
                 <Text style={styles.conversationTitleText} numberOfLines={1}>
-                  {conversationTitle || 'New Conversation'}
+                  {conversationTitle || 'Health Assessment'}
                 </Text>
               </View>
             </View>
@@ -541,7 +540,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 2,
   },
-  visionAllyText: {
+  brandNameText: {
     fontSize: 20,
     fontWeight: '800',
     color: COLORS.textPrimary,
