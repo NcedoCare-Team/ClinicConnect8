@@ -87,7 +87,7 @@ export default function MainScreen({ navigation, route }) {
                 <View style={[styles.tabBtn, isActive && styles.tabBtnActive]}>
                   <Ionicons
                     name={isActive ? tab.icon : tab.iconOutline}
-                    size={isActive ? 22 : 20}
+                    size={isActive ? 26 : 24}
                     color={isActive ? '#FFFFFF' : COLORS.inkLight}
                   />
                 </View>
@@ -116,6 +116,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
+    overflow: 'visible',
     ...Platform.select({
       ios:     { shadowColor: '#0F172A', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.07, shadowRadius: 12 },
       android: { elevation: 12 },
@@ -124,43 +125,47 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingTop: 10,
-    paddingBottom: 2,
+    paddingTop: 14,
+    paddingBottom: 4,
     paddingHorizontal: 2,
+    overflow: 'visible',
   },
   tabSlot: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingBottom: 4,
-    gap: 3,
+    gap: 4,
+    overflow: 'visible',
   },
   tabBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   tabBtnActive: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: COLORS.primary,
-    marginTop: -18,
+    marginTop: -26,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
     ...Platform.select({
-      ios:     { shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.38, shadowRadius: 8 },
-      android: { elevation: 8 },
+      ios:     { shadowColor: COLORS.primaryDark, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.42, shadowRadius: 10 },
+      android: { elevation: 10 },
     }),
   },
   tabLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '600',
     color: COLORS.inkLight,
     textAlign: 'center',
   },
-  tabLabelActive: { color: COLORS.primary, fontWeight: '800', fontSize: 9 },
+  tabLabelActive: { color: COLORS.primary, fontWeight: '800', fontSize: 10 },
 
   bottomSafeArea: {
     height: Platform.OS === 'ios' ? 24 : 8,

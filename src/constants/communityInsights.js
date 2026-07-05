@@ -7,6 +7,7 @@ export const COMMUNITY_INSIGHTS = [
     category: 'Seasonal Alert',
     title: 'Flu activity rising',
     text: 'Flu cases have increased in your community this week. Consider vaccination if you have not had one this season.',
+    shortText: 'Flu cases have increased in your community this week.',
     date: 'Updated today',
   },
   {
@@ -15,6 +16,7 @@ export const COMMUNITY_INSIGHTS = [
     category: 'Wellness Tip',
     title: 'Stay hydrated',
     text: 'Warmer days are expected this week. Drink water regularly, especially if you are on medication.',
+    shortText: 'Stay hydrated — warmer days are expected this week.',
     date: 'Updated today',
   },
   {
@@ -23,6 +25,7 @@ export const COMMUNITY_INSIGHTS = [
     category: 'Recovery',
     title: 'Light movement helps',
     text: 'Regular gentle movement supports recovery and overall wellbeing. Even a short walk can make a difference.',
+    shortText: 'Regular movement supports recovery and wellbeing.',
     date: 'Updated yesterday',
   },
   {

@@ -14,6 +14,7 @@ import { COLORS } from '../../constants/colors';
 import { HOME_INSIGHT_PREVIEW } from '../../constants/communityInsights';
 import { UserProfileService } from '../../services/UserProfileService';
 import { HomeHeader, LAYOUT } from '../../components/layout/ScreenHeader';
+import FacilityBanner from '../../components/layout/FacilityBanner';
 import InsightCard from '../../components/insights/InsightCard';
 
 const STATUS_BADGE = {
@@ -23,12 +24,11 @@ const STATUS_BADGE = {
 };
 
 export default function HomeScreen({ navigation }) {
-  const [userName,         setUserName]         = useState('');
   const [facility,         setFacility]         = useState('');
-  const [avatarUri,        setAvatarUri]        = useState(null);
   const [careItems,        setCareItems]        = useState([]);
   const [lastAssessment,   setLastAssessment]   = useState(null);
   const [loading,          setLoading]          = useState(true);
+  const [notificationCount, setNotificationCount] = useState(3);
 
   useEffect(() => { loadDashboard(); }, []);
 
@@ -36,11 +36,8 @@ export default function HomeScreen({ navigation }) {
     setLoading(true);
     const uid = auth.currentUser?.uid;
     const profile = await UserProfileService.getProfile();
-    const pic = await UserProfileService.getProfilePicture();
 
-    setUserName((profile.displayName || auth.currentUser?.displayName || '').split(' ')[0] || 'there');
     setFacility(profile.primaryFacility || profile.location || '');
-    setAvatarUri(pic);
 
     if (uid) {
       try {
@@ -63,23 +60,56 @@ export default function HomeScreen({ navigation }) {
     Alert.alert('Change Facility', 'Facility selection will be available in a future update.');
   };
 
+  const handleNotifications = () => {
+    Alert.alert('Notifications', 'Your care updates and reminders will appear here.');
+  };
+
   const goToInsights = () => navigation.getParent()?.jumpTo('insights');
+
+  const facilityLabel = facility || '';
+  const facilityDisplay = facilityLabel || 'Connect a healthcare facility';
 
   return (
     <View style={styles.container}>
       <HomeHeader
-        userName={userName}
-        facility={facility || 'Connect a healthcare facility'}
-        avatarUri={avatarUri}
-        onProfilePress={() => navigation.getParent()?.jumpTo('profile')}
-        onChangeFacility={handleChangeFacility}
+        notificationCount={notificationCount}
+        onNotificationPress={handleNotifications}
       />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
 
-        {/* Primary Action Card */}
+        <FacilityBanner
+          facility={facilityDisplay}
+          onPress={handleChangeFacility}
+          onChangePress={handleChangeFacility}
+        />
+
+        {/* Personal Health Snapshot */}
+        <Text style={[styles.sectionTitle, { marginBottom: 6 }]}>Personal Health Snapshot</Text>
+        <Text style={styles.sectionDesc}>
+         Link your Smartwatch to get additional data about your health to help AI with more context
+        </Text>
+        <View style={styles.statsGrid}>
+          <StatTile icon="heart-outline" label="Heart Rate" value="—" unit="bpm" />
+          <StatTile icon="thermometer-outline" label="Temperature" value="—" unit="°C" />
+          <StatTile
+            icon="clipboard-outline"
+            label="Last Assessment"
+            value={formatAssessmentDate(lastAssessment)}
+            compact
+          />
+          <TouchableOpacity style={styles.statTile} activeOpacity={0.8}>
+            <View style={[styles.statIcon, { backgroundColor: COLORS.infoLight }]}>
+              <Ionicons name="watch-outline" size={18} color={COLORS.info} />
+            </View>
+            <Text style={styles.statLabel}>Health Device</Text>
+            <Text style={styles.statConnect}>Connect a device</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Primary Action Card — before Care Timeline */}
         <TouchableOpacity
           style={styles.actionCardWrap}
           onPress={() => navigation.getParent()?.jumpTo('assessment')}
@@ -102,26 +132,6 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="arrow-forward-circle" size={28} color="rgba(255,255,255,0.85)" />
           </LinearGradient>
         </TouchableOpacity>
-
-        {/* Personal Health Snapshot — directly under action card */}
-        <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Personal Health Snapshot</Text>
-        <View style={styles.statsGrid}>
-          <StatTile icon="heart-outline" label="Heart Rate" value="—" unit="bpm" />
-          <StatTile icon="thermometer-outline" label="Temperature" value="—" unit="°C" />
-          <StatTile
-            icon="clipboard-outline"
-            label="Last Assessment"
-            value={formatAssessmentDate(lastAssessment)}
-            compact
-          />
-          <TouchableOpacity style={styles.statTile} activeOpacity={0.8}>
-            <View style={[styles.statIcon, { backgroundColor: COLORS.infoLight }]}>
-              <Ionicons name="watch-outline" size={18} color={COLORS.info} />
-            </View>
-            <Text style={styles.statLabel}>Health Device</Text>
-            <Text style={styles.statConnect}>Connect a device</Text>
-          </TouchableOpacity>
-        </View>
 
         {/* Care Timeline */}
         <View style={[styles.sectionHeader, { marginTop: 8 }]}>
@@ -169,24 +179,21 @@ export default function HomeScreen({ navigation }) {
           </ScrollView>
         )}
 
-        {/* Community Health Insights — 3 preview cards */}
+        {/* Community Health Insights — vertical list */}
         <Text style={[styles.sectionTitle, { marginBottom: 12, marginTop: 4 }]}>
           Community Health Insights
         </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.insightsScroll}>
-          {HOME_INSIGHT_PREVIEW.map((insight, index) => (
+        <View style={styles.insightsList}>
+          {HOME_INSIGHT_PREVIEW.map((insight) => (
             <InsightCard
               key={insight.id}
               insight={insight}
-              style={styles.insightCard}
-              showViewMore={index === HOME_INSIGHT_PREVIEW.length - 1}
+              compact
+              showViewMore
               onViewMore={goToInsights}
             />
           ))}
-        </ScrollView>
+        </View>
 
         <View style={{ height: LAYOUT.bottomTabClearance }} />
       </ScrollView>
@@ -265,9 +272,9 @@ const cardShadow = Platform.select({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
-  scrollContent: { paddingHorizontal: LAYOUT.screenPadding, paddingTop: 20 },
+  scrollContent: { paddingHorizontal: LAYOUT.screenPadding, paddingTop: 16 },
 
-  actionCardWrap: { marginBottom: 24, borderRadius: LAYOUT.cardRadius, overflow: 'hidden', ...cardShadow },
+  actionCardWrap: { marginBottom: 28, marginTop: 4, borderRadius: LAYOUT.cardRadius, overflow: 'hidden', ...cardShadow },
   actionCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -304,13 +311,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary },
+  sectionDesc: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
   sectionLink: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
 
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 28,
+    marginBottom: 20,
   },
   statTile: {
     width: '47%',
@@ -377,6 +390,5 @@ const styles = StyleSheet.create({
   },
   timelineBadgeText: { fontSize: 10, fontWeight: '700' },
 
-  insightsScroll: { gap: 12, paddingBottom: 4, marginBottom: 8 },
-  insightCard: { width: 280 },
+  insightsList: { gap: 12, marginBottom: 8 },
 });

@@ -1,4 +1,4 @@
-// Shared screen header — logo-led, hospitality blue aesthetic.
+// Shared screen header — logo-led with decorative blue gradient band.
 
 import React from 'react';
 import {
@@ -9,49 +9,51 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import AppLogo from './AppLogo';
 
-const HEADER_GRADIENT = ['rgba(37,99,235,0.07)', 'rgba(37,99,235,0.02)', 'transparent'];
+function HeaderDecorations({ light }) {
+  const color = light ? 'rgba(255,255,255,0.14)' : 'rgba(37,99,235,0.10)';
+  const color2 = light ? 'rgba(255,255,255,0.08)' : 'rgba(37,99,235,0.06)';
+  return (
+    <>
+      <View style={[styles.decoCircle, styles.deco1, { backgroundColor: color }]} />
+      <View style={[styles.decoCircle, styles.deco2, { backgroundColor: color2 }]} />
+      <View style={[styles.decoCircle, styles.deco3, { backgroundColor: color }]} />
+      <View style={[styles.decoDot, styles.dot1, { backgroundColor: light ? 'rgba(255,255,255,0.35)' : COLORS.primaryGlow }]} />
+      <View style={[styles.decoDot, styles.dot2, { backgroundColor: light ? 'rgba(255,255,255,0.25)' : COLORS.primaryLight }]} />
+      <View style={[styles.decoDot, styles.dot3, { backgroundColor: light ? 'rgba(255,255,255,0.20)' : COLORS.primaryGlow }]} />
+    </>
+  );
+}
 
-export function HomeHeader({
-  userName,
-  facility,
-  avatarUri,
-  onProfilePress,
-  onChangeFacility,
-}) {
-  const initial = userName ? userName.charAt(0).toUpperCase() : 'U';
+export function HomeHeader({ notificationCount = 3, onNotificationPress }) {
+  const badgeLabel = notificationCount > 9 ? '9+' : String(notificationCount);
+  const showBadge = notificationCount > 0;
 
   return (
-    <View style={styles.homeHeader}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <LinearGradient colors={HEADER_GRADIENT} style={styles.homeGradient} />
+    <View style={styles.homeHeaderWrap}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark, '#1E40AF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.homeHeader}>
+        <HeaderDecorations light />
 
-      <View style={styles.homeTopRow}>
-        <AppLogo size="md" showTagline />
+        <View style={styles.homeTopRow}>
+          <AppLogo size="md" showTagline light />
 
-        <TouchableOpacity style={styles.avatarBtn} onPress={onProfilePress} activeOpacity={0.8}>
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-          ) : (
-            <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarInitial}>{initial}</Text>
-            </LinearGradient>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.facilityRow}>
-        <View style={styles.facilityChip}>
-          <Ionicons name="business-outline" size={13} color={COLORS.primary} />
-          <Text style={styles.facilityText} numberOfLines={1}>
-            {facility || 'Connect a healthcare facility'}
-          </Text>
-        </View>
-        {onChangeFacility && (
-          <TouchableOpacity onPress={onChangeFacility} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
-            <Text style={styles.changeLink}>Change</Text>
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={onNotificationPress}
+            activeOpacity={0.85}>
+            <Ionicons name="notifications" size={24} color="#FFFFFF" />
+            {showBadge && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{badgeLabel}</Text>
+              </View>
+            )}
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -66,36 +68,38 @@ export function ScreenHeader({
   useLogo,
 }) {
   return (
-    <View style={styles.screenHeader}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <LinearGradient colors={HEADER_GRADIENT} style={styles.homeGradient} />
+    <View style={styles.screenHeaderWrap}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.screenHeader}>
+        <HeaderDecorations light />
 
-      <View style={styles.screenTopRow}>
-        {useLogo ? (
-          <AppLogo size="sm" />
-        ) : (
-          <View style={styles.screenTextBlock}>
-            <Text style={styles.screenTitle}>{title}</Text>
-            {subtitle ? <Text style={styles.screenSubtitle}>{subtitle}</Text> : null}
-            {statusLabel ? (
-              <View style={styles.statusRow}>
-                {statusDot !== false && <View style={styles.onlineDot} />}
-                <Text style={styles.statusText}>{statusLabel}</Text>
-              </View>
-            ) : null}
-          </View>
-        )}
+        <View style={styles.screenTopRow}>
+          {useLogo ? (
+            <AppLogo size="sm" light />
+          ) : (
+            <View style={styles.screenTextBlock}>
+              <Text style={styles.screenTitleLight}>{title}</Text>
+              {subtitle ? <Text style={styles.screenSubtitleLight}>{subtitle}</Text> : null}
+              {statusLabel ? (
+                <View style={styles.statusRow}>
+                  {statusDot !== false && <View style={styles.onlineDot} />}
+                  <Text style={styles.statusTextLight}>{statusLabel}</Text>
+                </View>
+              ) : null}
+            </View>
+          )}
 
-        {rightIcon && (
-          <TouchableOpacity style={styles.iconBtn} onPress={onRightPress} activeOpacity={0.7}>
-            <Ionicons name={rightIcon} size={20} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {useLogo && title ? (
-        <Text style={styles.logoScreenSubtitle}>{subtitle || title}</Text>
-      ) : null}
+          {rightIcon && (
+            <TouchableOpacity style={styles.iconBtnLight} onPress={onRightPress} activeOpacity={0.7}>
+              <Ionicons name={rightIcon} size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -104,131 +108,149 @@ export function ProfileHeader({ displayName, facility, avatarUri, onAvatarPress 
   const initial = displayName ? displayName.charAt(0).toUpperCase() : 'U';
 
   return (
-    <View style={styles.profileHeader}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <LinearGradient colors={HEADER_GRADIENT} style={styles.homeGradient} />
+    <View style={styles.profileHeaderWrap}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark, '#1E40AF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.profileHeader}>
+        <HeaderDecorations light />
 
-      <TouchableOpacity style={styles.profileAvatarWrap} onPress={onAvatarPress} activeOpacity={0.85}>
-        {avatarUri ? (
-          <Image source={{ uri: avatarUri }} style={styles.profileAvatar} />
-        ) : (
-          <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarInitial}>{initial}</Text>
-          </LinearGradient>
-        )}
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.profileAvatarWrap} onPress={onAvatarPress} activeOpacity={0.85}>
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} style={styles.profileAvatar} />
+          ) : (
+            <View style={styles.profileAvatar}>
+              <Text style={styles.profileAvatarInitial}>{initial}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
-      <Text style={styles.profileName}>{displayName || 'Patient'}</Text>
+        <Text style={styles.profileNameLight}>{displayName || 'Patient'}</Text>
 
-      {facility ? (
-        <View style={styles.profileFacilityBadge}>
-          <Ionicons name="location-outline" size={12} color={COLORS.primary} />
-          <Text style={styles.profileFacilityText}>{facility}</Text>
-        </View>
-      ) : null}
+        {facility ? (
+          <View style={styles.profileFacilityBadgeLight}>
+            <Ionicons name="location-outline" size={12} color={COLORS.primary} />
+            <Text style={styles.profileFacilityText}>{facility}</Text>
+          </View>
+        ) : null}
+      </LinearGradient>
     </View>
   );
 }
 
 export const LAYOUT = {
   screenPadding: 20,
-  bottomTabClearance: 108,
+  bottomTabClearance: 118,
   cardRadius: 16,
 };
 
 const styles = StyleSheet.create({
+  homeHeaderWrap: { overflow: 'hidden' },
   homeHeader: {
-    backgroundColor: '#FFFFFF',
     paddingTop: Platform.OS === 'ios' ? 58 : (StatusBar.currentHeight || 0) + 16,
-    paddingBottom: 14,
+    paddingBottom: 22,
     paddingHorizontal: LAYOUT.screenPadding,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  homeGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 120,
+    position: 'relative',
+    overflow: 'hidden',
   },
   homeTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 12,
+    zIndex: 5,
   },
-  facilityRow: {
-    flexDirection: 'row',
+
+  decoCircle: { position: 'absolute', borderRadius: 999 },
+  deco1: { width: 140, height: 140, top: -50, right: -30 },
+  deco2: { width: 90, height: 90, bottom: -30, left: -20 },
+  deco3: { width: 60, height: 60, top: 20, right: 100 },
+  decoDot: { position: 'absolute', borderRadius: 999 },
+  dot1: { width: 10, height: 10, top: 18, right: 48 },
+  dot2: { width: 6, height: 6, bottom: 28, left: 40 },
+  dot3: { width: 8, height: 8, top: 42, left: '55%' },
+
+  avatarBtn: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.45)',
+  },
+  notifBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    zIndex: 10,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6 },
+      android: { elevation: 6 },
+    }),
   },
-  facilityChip: {
-    flexDirection: 'row',
+  notifBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.error,
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.primaryVeryLight,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    maxWidth: '78%',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: COLORS.primaryDark,
+    zIndex: 11,
   },
-  facilityText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.primary,
-    flexShrink: 1,
+  notifBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    lineHeight: 12,
   },
-  changeLink: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.primaryLight,
-    textDecorationLine: 'underline',
-  },
-  avatarBtn: { borderRadius: 24, overflow: 'hidden' },
-  avatarImage: { width: 44, height: 44, borderRadius: 22 },
+  avatarImage: { width: 46, height: 46, borderRadius: 23 },
   avatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+  avatarInitial: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
 
+  screenHeaderWrap: { overflow: 'hidden' },
   screenHeader: {
-    backgroundColor: '#FFFFFF',
     paddingTop: Platform.OS === 'ios' ? 58 : (StatusBar.currentHeight || 0) + 16,
-    paddingBottom: 16,
+    paddingBottom: 18,
     paddingHorizontal: LAYOUT.screenPadding,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
+    position: 'relative',
+    overflow: 'hidden',
   },
   screenTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    zIndex: 2,
   },
   screenTextBlock: { flex: 1 },
-  screenTitle: {
+  screenTitleLight: {
     fontSize: 22,
     fontWeight: '800',
-    color: COLORS.textPrimary,
+    color: '#FFFFFF',
     letterSpacing: -0.3,
   },
-  screenSubtitle: {
+  screenSubtitleLight: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: 'rgba(255,255,255,0.78)',
     marginTop: 4,
     lineHeight: 18,
-  },
-  logoScreenSubtitle: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    marginTop: 10,
-    fontWeight: '500',
   },
   statusRow: {
     flexDirection: 'row',
@@ -240,56 +262,61 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: COLORS.success,
+    backgroundColor: '#86EFAC',
   },
-  statusText: {
+  statusTextLight: {
     fontSize: 12,
     fontWeight: '600',
-    color: COLORS.textSecondary,
+    color: 'rgba(255,255,255,0.85)',
   },
-  iconBtn: {
+  iconBtnLight: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: COLORS.backgroundSecondary,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: COLORS.borderLight,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
 
+  profileHeaderWrap: { overflow: 'hidden' },
   profileHeader: {
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 58 : (StatusBar.currentHeight || 0) + 20,
-    paddingBottom: 20,
+    paddingBottom: 22,
     paddingHorizontal: LAYOUT.screenPadding,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  profileAvatarWrap: { marginBottom: 12 },
+  profileAvatarWrap: { marginBottom: 12, zIndex: 2 },
   profileAvatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.45)',
   },
   profileAvatarInitial: { fontSize: 32, fontWeight: '800', color: '#FFFFFF' },
-  profileName: {
+  profileNameLight: {
     fontSize: 22,
     fontWeight: '800',
-    color: COLORS.textPrimary,
+    color: '#FFFFFF',
     marginBottom: 8,
+    zIndex: 2,
   },
-  profileFacilityBadge: {
+  profileFacilityBadgeLight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: COLORS.primaryVeryLight,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
+    zIndex: 2,
   },
   profileFacilityText: {
     fontSize: 12,

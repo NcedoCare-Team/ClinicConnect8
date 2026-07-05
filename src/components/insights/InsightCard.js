@@ -1,4 +1,4 @@
-// Reusable community health insight card — used on Home preview and Insights tab.
+// Reusable community health insight card — preview (compact) and full list modes.
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
@@ -6,7 +6,35 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { LAYOUT } from '../layout/ScreenHeader';
 
-export default function InsightCard({ insight, style, showViewMore, onViewMore }) {
+export default function InsightCard({
+  insight,
+  style,
+  compact = false,
+  showViewMore = false,
+  onViewMore,
+}) {
+  const displayText = compact ? (insight.shortText || insight.text) : insight.text;
+
+  if (compact) {
+    return (
+      <View style={[styles.compactCard, style]}>
+        <View style={styles.compactIcon}>
+          <Ionicons name={insight.icon} size={18} color={COLORS.primary} />
+        </View>
+        <View style={styles.compactBody}>
+          <Text style={styles.compactLabel}>Community Health Insights</Text>
+          <Text style={styles.compactText} numberOfLines={2}>{displayText}</Text>
+          {showViewMore && (
+            <TouchableOpacity style={styles.viewMoreBtn} onPress={onViewMore} activeOpacity={0.75}>
+              <Text style={styles.viewMoreText}>View more</Text>
+              <Ionicons name="arrow-forward" size={13} color={COLORS.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.card, style]}>
       <View style={styles.iconWrap}>
@@ -20,7 +48,7 @@ export default function InsightCard({ insight, style, showViewMore, onViewMore }
         {insight.title ? (
           <Text style={styles.title}>{insight.title}</Text>
         ) : null}
-        <Text style={styles.text}>{insight.text}</Text>
+        <Text style={styles.text}>{displayText}</Text>
         {showViewMore && (
           <TouchableOpacity style={styles.viewMoreBtn} onPress={onViewMore} activeOpacity={0.75}>
             <Text style={styles.viewMoreText}>View more</Text>
@@ -38,6 +66,40 @@ const cardShadow = Platform.select({
 });
 
 const styles = StyleSheet.create({
+  compactCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: COLORS.backgroundTertiary,
+    borderRadius: LAYOUT.cardRadius,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    ...cardShadow,
+  },
+  compactIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactBody: { flex: 1 },
+  compactLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  compactText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 17,
+  },
+
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -89,12 +151,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 12,
+    marginTop: 10,
     alignSelf: 'flex-start',
   },
   viewMoreText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
     color: COLORS.primary,
   },
 });

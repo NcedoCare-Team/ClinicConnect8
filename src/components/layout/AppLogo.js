@@ -6,30 +6,32 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 
-export default function AppLogo({ size = 'md', showTagline = false }) {
-  const markSize = size === 'lg' ? 48 : size === 'sm' ? 36 : 42;
-  const iconSize = size === 'lg' ? 26 : size === 'sm' ? 18 : 22;
+export default function AppLogo({ size = 'md', showTagline = false, light = false }) {
+  const markSize = size === 'lg' ? 54 : size === 'sm' ? 38 : 50;
+  const iconSize = size === 'lg' ? 28 : size === 'sm' ? 19 : 26;
   const titleSize = size === 'lg' ? 24 : size === 'sm' ? 17 : 20;
 
   return (
     <View style={styles.wrap}>
       <LinearGradient
-        colors={[COLORS.primary, COLORS.primaryDark]}
+        colors={light ? ['#FFFFFF', '#E0EAFF'] : [COLORS.primary, COLORS.primaryDark]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.mark, { width: markSize, height: markSize, borderRadius: markSize * 0.28 }]}>
         <View style={styles.markInner}>
-          <Ionicons name="medical" size={iconSize} color="#FFFFFF" />
+          <Ionicons name="medical" size={iconSize} color={light ? COLORS.primary : '#FFFFFF'} />
         </View>
-        <View style={styles.markShine} />
+        <View style={[styles.markShine, light && { backgroundColor: 'rgba(37,99,235,0.08)' }]} />
       </LinearGradient>
 
       <View style={styles.textBlock}>
-        <Text style={[styles.title, { fontSize: titleSize }]}>
-          Ncedo<Text style={styles.titleAccent}>Care</Text>
+        <Text style={[styles.title, { fontSize: titleSize }, light && styles.titleLight]}>
+          Ncedo<Text style={[styles.titleAccent, light && styles.titleAccentLight]}>Care</Text>
         </Text>
         {showTagline && (
-          <Text style={styles.tagline}>Smarter care for stronger communities</Text>
+          <Text style={[styles.tagline, light && styles.taglineLight]}>
+            Smarter care for stronger communities
+          </Text>
         )}
       </View>
     </View>
@@ -76,10 +78,13 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   titleAccent: { color: COLORS.primary },
+  titleLight: { color: '#FFFFFF' },
+  titleAccentLight: { color: '#BFDBFE' },
   tagline: {
     fontSize: 11,
     color: COLORS.textTertiary,
     fontWeight: '500',
     marginTop: 1,
   },
+  taglineLight: { color: 'rgba(255,255,255,0.72)' },
 });
