@@ -275,7 +275,7 @@ def chatbot_response():
         image_file = request.files.get("image")
         document_file = request.files.get("document")
         
-        print(f"\n=== VisionAlly Request at {datetime.now().strftime('%H:%M:%S')} ===")
+        print(f"\n=== NcedoCare Request at {datetime.now().strftime('%H:%M:%S')} ===")
         print(f"Text: {user_input[:50] if user_input else 'None'}...")
         print(f"Audio: {audio_file is not None}, Image: {image_file is not None}, Document: {document_file is not None}")
         print(f"Conversation ID: {conversation_id}")

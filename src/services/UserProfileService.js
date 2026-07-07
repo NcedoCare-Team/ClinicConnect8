@@ -8,10 +8,10 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, firestore } from '../../firebase';
 
 const KEYS = {
-  PROFILE_CACHE:   (uid) => `@va_profile_${uid}`,
-  PROFILE_PICTURE: (uid) => `@visionally_profile_picture_${uid}`,
-  ONBOARDING_DONE: (uid) => `@va_onboarding_done_${uid}`,
-  APP_SETTINGS:    '@va_app_settings',
+  PROFILE_CACHE:   (uid) => `@ncedocare_profile_${uid}`,
+  PROFILE_PICTURE: (uid) => `@ncedocare_profile_picture_${uid}`,
+  ONBOARDING_DONE: (uid) => `@ncedocare_onboarding_done_${uid}`,
+  APP_SETTINGS:    '@ncedocare_app_settings',
 };
 
 // Firestore document path: users/{uid}/profile/main
