@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Patients can read/write only their own profile
+    match /patients/{patientId} {
+      allow read, write: if request.auth != null && request.auth.uid == patientId;
+    }
+
+    // Nurses, doctors, and admins can read any patient profile (not write)
+    match /patients/{patientId} {
+      allow read: if request.auth != null &&
+        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role
+        in ['nurse', 'doctor', 'admin'];
+    }
+
+    // Triage cases: any authenticated user can create; staff can read/update
+    match /triageCases/{caseId} {
+      allow create: if request.auth != null;
+      allow read, update: if request.auth != null &&
+        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role
+        in ['nurse', 'doctor', 'admin'];
+    }
+
+    // Facility queues: authenticated read only, writes via Cloud Functions
+    match /facilityQueues/{facilityId}/activeQueue/{caseId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Blockchain events: doctors/admins can read, writes via Cloud Functions only
+    match /blockchainEvents/{eventId} {
+      allow read: if request.auth != null &&
+        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role
+        in ['doctor', 'admin'];
+      allow write: if false;
+    }
+
+    // Facilities: public read, admin-only write
+    match /facilities/{facilityId} {
+      allow read: if true;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
+
