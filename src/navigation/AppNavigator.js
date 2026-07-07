@@ -12,8 +12,10 @@ import { UserProfileService } from '../services/UserProfileService';
 import LoginScreen        from '../screens/auth/LoginScreen';
 import MainScreen         from '../screens/main/MainScreen';
 import OnboardingScreen   from '../screens/main/OnboardingScreen';
-import TriageResultScreen    from '../screens/main/TriageResultScreen';
-import ChatConversationScreen from '../screens/main/ChatConversationScreen';
+import TriageResultScreen       from '../screens/main/TriageResultScreen';
+import ChatConversationScreen  from '../screens/main/ChatConversationScreen';
+import FacilitySelectionScreen from '../screens/main/FacilitySelectionScreen';
+import FacilityWelcomeScreen   from '../screens/main/FacilityWelcomeScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -79,6 +81,16 @@ export default function AppNavigator() {
               name="TriageResult"
               component={TriageResultScreen}
               options={{ animation: 'slide_from_bottom', gestureEnabled: true, gestureDirection: 'vertical' }}
+            />
+            <Stack.Screen
+              name="FacilitySelection"
+              component={FacilitySelectionScreen}
+              options={{ animation: 'slide_from_right', gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="FacilityWelcome"
+              component={FacilityWelcomeScreen}
+              options={{ animation: 'slide_from_right', gestureEnabled: true }}
             />
           </>
         ) : (

@@ -4,8 +4,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Platform, ActivityIndicator, Alert,
+  Platform, ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -16,6 +17,7 @@ import { UserProfileService } from '../../services/UserProfileService';
 import { HomeHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 import FacilityBanner from '../../components/layout/FacilityBanner';
 import InsightCard from '../../components/insights/InsightCard';
+import { SessionService } from '../../services/SessionService';
 
 const STATUS_BADGE = {
   queued:    { label: 'Submitted', color: COLORS.medium,  bg: COLORS.mediumLight  },
@@ -32,12 +34,22 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => { loadDashboard(); }, []);
 
+  // Refresh facility name from in-memory session whenever this tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      const sessionFacility = SessionService.getFacilityName();
+      if (sessionFacility) setFacility(sessionFacility);
+    }, [])
+  );
+
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     const uid = auth.currentUser?.uid;
     const profile = await UserProfileService.getProfile();
 
-    setFacility(profile.primaryFacility || profile.location || '');
+    // Prefer in-memory session (not persisted across restarts), then fall back to profile
+    const sessionFacility = SessionService.getFacilityName();
+    setFacility(sessionFacility || profile.primaryFacility || profile.location || '');
 
     if (uid) {
       try {
@@ -57,7 +69,7 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const handleChangeFacility = () => {
-    Alert.alert('Change Facility', 'Facility selection will be available in a future update.');
+    navigation.navigate('FacilitySelection');
   };
 
   // const handleNotifications = () => {
@@ -66,8 +78,7 @@ export default function HomeScreen({ navigation }) {
 
   const goToInsights = () => navigation.getParent()?.jumpTo('insights');
 
-  const facilityLabel = facility || '';
-  const facilityDisplay = facilityLabel || 'Connect a healthcare facility';
+  const facilityDisplay = facility || '';
 
   return (
     <View style={styles.container}>
@@ -84,6 +95,7 @@ export default function HomeScreen({ navigation }) {
           facility={facilityDisplay}
           onPress={handleChangeFacility}
           onChangePress={handleChangeFacility}
+          showConnect={!facilityDisplay}
         />
 
         {/* Personal Health Snapshot */}
