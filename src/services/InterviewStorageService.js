@@ -6,9 +6,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KEYS = {
-  SESSIONS_LIST:  '@visionally_interview_sessions',  // Array of session IDs (newest first)
-  SESSION_PREFIX: '@visionally_session_',             // + sessionId → full session object
-  ABOUT_ME_CACHE: '@visionally_about_me_cache',       // Local mirror of Firestore profile
+  SESSIONS_LIST:  '@ncedocare_interview_sessions',
+  SESSION_PREFIX: '@ncedocare_session_',
+  ABOUT_ME_CACHE: '@ncedocare_about_me_cache',
 };
 
 // ─── Types (JSDoc) ───────────────────────────────────────────────────────────

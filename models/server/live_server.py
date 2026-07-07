@@ -1,6 +1,6 @@
 # models/server/live_server.py
 # ─────────────────────────────────────────────────────────────────────────────
-# VisionAlly — Gemini Live API WebSocket Relay Server
+# NcedoCare — Gemini Live API WebSocket Relay Server
 #
 # Architecture:
 #   React Native app  ←WebSocket→  This server  ←WebSocket→  Gemini Live API
@@ -231,7 +231,7 @@ async def main():
         sys.exit(1)
 
     print(f"\n{'═' * 60}")
-    print(f"  VisionAlly — Gemini Live Relay Server")
+    print(f"  NcedoCare — Gemini Live Relay Server")
     print(f"{'═' * 60}")
     print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Model:   {GEMINI_MODEL}")

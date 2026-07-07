@@ -2,16 +2,36 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Patients can read/write only their own profile
-    match /patients/{patientId} {
-      allow read, write: if request.auth != null && request.auth.uid == patientId;
+    function staffDoc() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
     }
 
-    // Nurses, doctors, and admins can read any patient profile (not write)
-    match /patients/{patientId} {
+    function sameFacility(facilityId) {
+      return request.auth != null && staffDoc().facilityId == facilityId;
+    }
+
+    match /staff/{uid} {
+      allow create: if request.auth != null && request.auth.uid == uid;
       allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role
-        in ['nurse', 'doctor', 'admin'];
+        (request.auth.uid == uid || sameFacility(resource.data.facilityId));
+      allow update: if request.auth != null &&
+        sameFacility(resource.data.facilityId) &&
+        staffDoc().role == 'admin';
+    }
+
+    match /facilities/{facilityId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if sameFacility(facilityId) && staffDoc().role == 'admin';
+    }
+
+    match /patients/{patientId} {
+      // Patients can read/write only their own profile
+      allow read, write: if request.auth != null && request.auth.uid == patientId;
+
+      // Staff at the same facility can read/write patient records
+      allow read, write: if sameFacility(resource.data.facilityId);
+      allow create: if sameFacility(request.resource.data.facilityId);
     }
 
     // Triage cases: any authenticated user can create; staff can read/update
@@ -35,13 +55,5 @@ service cloud.firestore {
         in ['doctor', 'admin'];
       allow write: if false;
     }
-
-    // Facilities: public read, admin-only write
-    match /facilities/{facilityId} {
-      allow read: if true;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role == 'admin';
-    }
   }
 }
-

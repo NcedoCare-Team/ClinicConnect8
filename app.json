@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "VA",
-    "slug": "VisionAlly",
+    "name": "NcedoCare",
+    "slug": "ncedocare",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
@@ -32,21 +32,21 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "VisionAlly needs camera access for your mock interview session.",
-          "microphonePermission": "VisionAlly needs microphone access to hear your interview responses.",
+          "cameraPermission": "NcedoCare needs camera access to support your healthcare session.",
+          "microphonePermission": "NcedoCare needs microphone access to capture voice input.",
           "recordAudioAndroid": true
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "VisionAlly needs microphone access to hear your interview responses."
+          "microphonePermission": "NcedoCare needs microphone access to capture voice input."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "VisionAlly needs photo library access so you can upload a job offer image."
+          "photosPermission": "NcedoCare needs photo library access so you can upload documents or reports."
         }
       ]
     ]

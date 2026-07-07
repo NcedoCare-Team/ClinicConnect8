@@ -2,8 +2,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEYS = {
-  CONVERSATIONS: '@visionally_conversations',
-  MESSAGES: '@visionally_messages_',
+  CONVERSATIONS: '@ncedocare_conversations',
+  MESSAGES: '@ncedocare_messages_',
 };
 
 export const ChatStorageService = {
