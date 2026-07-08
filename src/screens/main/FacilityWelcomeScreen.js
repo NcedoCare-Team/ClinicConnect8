@@ -11,8 +11,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, firestore } from '../../../firebase';
+import { auth } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { SessionService } from '../../services/SessionService';
 
@@ -65,7 +64,6 @@ export default function FacilityWelcomeScreen({ navigation, route }) {
     Keyboard.dismiss();
     setSaving(true);
 
-    const uid = auth.currentUser?.uid;
     const sessionData = {
       facilityId:      facility?.id   || '',
       facilityName,
@@ -80,23 +78,8 @@ export default function FacilityWelcomeScreen({ navigation, route }) {
       sessionStartedAt: new Date().toISOString(),
     };
 
-    // Store in module-level session (in-memory, not persisted)
+    // Session stored in-memory only — clears on app restart (by design)
     SessionService.setSession(sessionData);
-
-    // Also persist to Firestore so the facility name appears in the app
-    if (uid) {
-      try {
-        await setDoc(doc(firestore, 'users', uid), {
-          primaryFacility: facilityName,
-          currentSession: {
-            ...sessionData,
-            sessionStartedAt: serverTimestamp(),
-          },
-        }, { merge: true });
-      } catch (err) {
-        console.warn('[FacilityWelcome] Firestore save error (session stored in memory):', err);
-      }
-    }
 
     setSaving(false);
 

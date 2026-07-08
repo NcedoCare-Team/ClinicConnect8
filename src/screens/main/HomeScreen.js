@@ -9,7 +9,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, onSnapshot, doc } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { HOME_INSIGHT_PREVIEW } from '../../constants/communityInsights';
@@ -18,6 +18,7 @@ import { HomeHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 import FacilityBanner from '../../components/layout/FacilityBanner';
 import InsightCard from '../../components/insights/InsightCard';
 import { SessionService } from '../../services/SessionService';
+import { SleepTrackingService } from '../../services/SleepTrackingService';
 
 const STATUS_BADGE = {
   queued:    { label: 'Submitted', color: COLORS.medium,  bg: COLORS.mediumLight  },
@@ -30,9 +31,29 @@ export default function HomeScreen({ navigation }) {
   const [careItems,        setCareItems]        = useState([]);
   const [lastAssessment,   setLastAssessment]   = useState(null);
   const [loading,          setLoading]          = useState(true);
+  const [healthData,       setHealthData]       = useState(null);
+  const [sleepData,        setSleepData]        = useState(() => SleepTrackingService.getSleepData());
   // const [notificationCount, setNotificationCount] = useState(3);
 
   useEffect(() => { loadDashboard(); }, []);
+
+  // Real-time health metrics listener (smartwatch data via Firestore)
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const unsub = onSnapshot(
+      doc(firestore, 'users', uid),
+      snap => { if (snap.exists()) setHealthData(snap.data().healthData || null); },
+      () => { /* permission denied — stress/BP tiles show — */ }
+    );
+    return unsub;
+  }, []);
+
+  // Sleep tracking — phone-inactivity based, updates when the service detects sleep
+  useEffect(() => {
+    setSleepData(SleepTrackingService.getSleepData());
+    return SleepTrackingService.addListener(data => setSleepData(data));
+  }, []);
 
   // Refresh facility name from in-memory session whenever this tab is focused
   useFocusEffect(
@@ -99,25 +120,55 @@ export default function HomeScreen({ navigation }) {
         />
 
         {/* Personal Health Snapshot */}
-        <Text style={[styles.sectionTitle, { marginBottom: 6 }]}>Personal Health Snapshot</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Health Monitoring</Text>
+          {healthData?.deviceConnected && (
+            <View style={styles.liveChip}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.sectionDesc}>
-         Link your Smartwatch to get additional data about your health to help AI with more context
+          Connect your smartwatch to monitor stress, blood pressure and sleep in real time.
         </Text>
         <View style={styles.statsGrid}>
-          <StatTile icon="heart-outline" label="Heart Rate" value="—" unit="bpm" />
-          <StatTile icon="thermometer-outline" label="Temperature" value="—" unit="°C" />
-          <StatTile
-            icon="clipboard-outline"
-            label="Last Assessment"
-            value={formatAssessmentDate(lastAssessment)}
-            compact
+          <HealthMetricTile
+            icon="pulse-outline"
+            label="Stress Level"
+            {...stressProps(healthData?.stress)}
           />
-          <TouchableOpacity style={styles.statTile} activeOpacity={0.8}>
-            <View style={[styles.statIcon, { backgroundColor: COLORS.infoLight }]}>
-              <Ionicons name="watch-outline" size={18} color={COLORS.info} />
+          <HealthMetricTile
+            icon="heart-circle-outline"
+            label="Blood Pressure"
+            {...bpProps(healthData?.bloodPressure)}
+          />
+          <HealthMetricTile
+            icon="moon-outline"
+            label="Sleep"
+            {...sleepProps(sleepData)}
+          />
+          <TouchableOpacity
+            style={styles.statTile}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('FacilitySelection')}>
+            <View style={[styles.statIcon, {
+              backgroundColor: healthData?.deviceConnected ? COLORS.lowLight : COLORS.infoLight,
+            }]}>
+              <Ionicons
+                name="watch-outline"
+                size={18}
+                color={healthData?.deviceConnected ? COLORS.low : COLORS.info}
+              />
             </View>
-            <Text style={styles.statLabel}>Health Device</Text>
-            <Text style={styles.statConnect}>Connect a device</Text>
+            <Text style={styles.statLabel}>
+              {healthData?.deviceConnected ? healthData.deviceName || 'Smartwatch' : 'Health Device'}
+            </Text>
+            <Text style={[styles.statConnect, {
+              color: healthData?.deviceConnected ? COLORS.low : COLORS.info,
+            }]}>
+              {healthData?.deviceConnected ? 'Connected' : 'Connect a device'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -213,25 +264,73 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-function StatTile({ icon, label, value, unit, compact }) {
+// ── Health metric tile ────────────────────────────────────────────────────────
+function HealthMetricTile({ icon, label, value, unit, iconBg, iconColor, chipLabel, chipColor, chipBg }) {
   return (
     <View style={styles.statTile}>
-      <View style={[styles.statIcon, { backgroundColor: COLORS.primaryVeryLight }]}>
-        <Ionicons name={icon} size={18} color={COLORS.primary} />
+      <View style={[styles.statIcon, { backgroundColor: iconBg || COLORS.primaryVeryLight }]}>
+        <Ionicons name={icon} size={18} color={iconColor || COLORS.primary} />
       </View>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue} numberOfLines={compact ? 2 : 1}>
-        {value}{unit ? ` ${unit}` : ''}
+      <Text style={styles.statValue} numberOfLines={1}>
+        {value || '—'}{value && unit ? ` ${unit}` : ''}
       </Text>
+      {chipLabel ? (
+        <View style={[styles.metricChip, { backgroundColor: chipBg || COLORS.primaryVeryLight }]}>
+          <Text style={[styles.metricChipText, { color: chipColor || COLORS.primary }]}>{chipLabel}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
 
-function formatAssessmentDate(assessment) {
-  if (!assessment?.createdAt?.toDate) return 'None yet';
-  return assessment.createdAt.toDate().toLocaleDateString('en-ZA', {
-    day: 'numeric', month: 'short',
-  });
+// ── Stress display props ──────────────────────────────────────────────────────
+function stressProps(stress) {
+  if (!stress?.score && stress?.score !== 0) {
+    return { value: null, iconBg: COLORS.backgroundTertiary, iconColor: COLORS.textTertiary };
+  }
+  const score = stress.score;
+  const level = score <= 33 ? 'Low' : score <= 66 ? 'Medium' : 'High';
+  const color = score <= 33 ? COLORS.low : score <= 66 ? COLORS.medium : COLORS.critical;
+  const bg    = score <= 33 ? COLORS.lowLight : score <= 66 ? COLORS.mediumLight : COLORS.criticalLight;
+  return {
+    value: String(score), unit: '/ 100',
+    iconBg: bg, iconColor: color,
+    chipLabel: level, chipColor: color, chipBg: bg,
+  };
+}
+
+// ── Blood pressure display props ──────────────────────────────────────────────
+function bpProps(bp) {
+  if (!bp?.systolic) {
+    return { value: null, iconBg: COLORS.backgroundTertiary, iconColor: COLORS.textTertiary };
+  }
+  const { systolic, diastolic } = bp;
+  let label = 'Normal', color = COLORS.low, bg = COLORS.lowLight;
+  if (systolic >= 140 || diastolic >= 90) { label = 'High Stage 2'; color = COLORS.critical; bg = COLORS.criticalLight; }
+  else if (systolic >= 130 || diastolic >= 80) { label = 'High Stage 1'; color = COLORS.high;     bg = COLORS.highLight;    }
+  else if (systolic >= 120)                    { label = 'Elevated';     color = COLORS.medium;   bg = COLORS.mediumLight;  }
+  return {
+    value: `${systolic}/${diastolic}`, unit: 'mmHg',
+    iconBg: bg, iconColor: color,
+    chipLabel: label, chipColor: color, chipBg: bg,
+  };
+}
+
+// ── Sleep display props ───────────────────────────────────────────────────────
+function sleepProps(sleep) {
+  if (!sleep?.hours && sleep?.hours !== 0) {
+    return { value: null, iconBg: COLORS.backgroundTertiary, iconColor: COLORS.textTertiary };
+  }
+  const h = sleep.hours;
+  const label = h >= 8 ? 'Excellent' : h >= 7 ? 'Good' : h >= 6 ? 'Fair' : 'Poor';
+  const color = h >= 8 ? COLORS.low : h >= 7 ? COLORS.primary : h >= 6 ? COLORS.medium : COLORS.high;
+  const bg    = h >= 8 ? COLORS.lowLight : h >= 7 ? COLORS.primaryVeryLight : h >= 6 ? COLORS.mediumLight : COLORS.highLight;
+  return {
+    value: `${h.toFixed(1)}`, unit: 'hrs',
+    iconBg: bg, iconColor: color,
+    chipLabel: label, chipColor: color, chipBg: bg,
+  };
 }
 
 function buildCareTimeline(cases, profile) {
@@ -354,9 +453,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 10,
   },
-  statLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 },
-  statValue: { fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
+  statLabel:   { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 },
+  statValue:   { fontSize: 15, fontWeight: '800', color: COLORS.textPrimary },
   statConnect: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+
+  metricChip: {
+    alignSelf: 'flex-start', marginTop: 5,
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20,
+  },
+  metricChipText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
+
+  liveChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: COLORS.lowLight, borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  liveDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: COLORS.low,
+  },
+  liveText: { fontSize: 10, fontWeight: '900', color: COLORS.low, letterSpacing: 0.8 },
 
   loadingRow: { paddingVertical: 32, alignItems: 'center' },
   emptyTimeline: {

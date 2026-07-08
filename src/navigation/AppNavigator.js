@@ -8,6 +8,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { StorageService } from '../utils/storage';
 import { UserProfileService } from '../services/UserProfileService';
+import { SleepTrackingService } from '../services/SleepTrackingService';
 
 import LoginScreen        from '../screens/auth/LoginScreen';
 import MainScreen         from '../screens/main/MainScreen';
@@ -23,6 +24,11 @@ export default function AppNavigator() {
   const [user,           setUser]           = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [onboardingDone, setOnboardingDone] = useState(true);
+
+  useEffect(() => {
+    SleepTrackingService.init();
+    return () => SleepTrackingService.destroy();
+  }, []);
 
   useEffect(() => {
     const checkStoredSession = async () => {
