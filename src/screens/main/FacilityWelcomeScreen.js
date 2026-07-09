@@ -7,10 +7,12 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../../../firebase';
+import { auth, firestore } from '../../../firebase';
+import { setDoc, getDoc } from 'firebase/firestore';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
 import { useFacility } from '../../contexts/FacilityContext';
+import { facilityRef } from '../../services/firestorePaths';
 
 const TYPE_ICON = {
   hospital: 'business',
@@ -81,6 +83,31 @@ export default function FacilityWelcomeScreen({ navigation, route }) {
         facilityId: facility?.id || '',
         location: facilityAddress,
       });
+
+      // Create facility doc only if missing (updates require admin per shared rules)
+      if (facility?.id) {
+        try {
+          const ref = facilityRef(firestore, facility.id);
+          const existing = await getDoc(ref);
+          if (!existing.exists()) {
+            await setDoc(ref, {
+              facilityId: facility.id,
+              name: facilityName,
+              address: facilityAddress,
+              lat: facility?.lat ?? null,
+              lng: facility?.lng ?? null,
+              type: facilityType,
+              ownership: facilityOwnership,
+              country: 'South Africa',
+              isActive: true,
+              hasAdmin: false,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        } catch (err) {
+          console.log('Facility doc create error:', err);
+        }
+      }
 
       navigation.reset({
         index: 0,

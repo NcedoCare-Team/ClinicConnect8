@@ -112,6 +112,39 @@ function nominatimFetch(amenity, lat, lng) {
   });
 }
 
+function nominatimTextSearch(query) {
+  const url = (
+    `${NOMINATIM}?q=${encodeURIComponent(`${query} hospital clinic pharmacy South Africa`)}` +
+    `&format=json&countrycodes=za&limit=40` +
+    `&addressdetails=1&extratags=1`
+  );
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.setRequestHeader('User-Agent', 'NcedoCare/1.0 healthcare-triage-app');
+    xhr.timeout = 15000;
+    xhr.ontimeout = () => reject(new Error('Timeout'));
+    xhr.onerror  = () => reject(new Error('Network error'));
+    xhr.onload   = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const places = JSON.parse(xhr.responseText);
+          resolve(places.filter(p => {
+            const addr = p.address || {};
+            if (addr.amenity) return true;
+            return p.class === 'amenity' && AMENITY_MAP[p.type];
+          }));
+        } catch { reject(new Error('Invalid response')); }
+      } else {
+        reject(new Error(`HTTP ${xhr.status}`));
+      }
+    };
+    xhr.send();
+  });
+}
+
 // ── Parse Nominatim results into app facility objects ─────────────────────────
 function parseNominatimResults(allPlaces, userLat, userLng) {
   const seen = new Set();
@@ -157,10 +190,14 @@ export default function FacilitySelectionScreen({ navigation }) {
   const [typeFilter,     setTypeFilter]     = useState('all');
   const [ownerFilter,    setOwnerFilter]    = useState('all');
   const [fetching,       setFetching]       = useState(false);
+  const [searching,      setSearching]      = useState(false);
   const [refreshing,     setRefreshing]     = useState(false);
   const [apiError,       setApiError]       = useState(null);
+  const [remoteResults,  setRemoteResults]  = useState(null);
   const searchRef   = useRef(null);
   const inFlightRef = useRef(false);
+  const searchTimerRef = useRef(null);
+  const searchReqRef   = useRef(0);
 
   useEffect(() => { requestLocation(); }, []);
 
@@ -225,19 +262,57 @@ export default function FacilitySelectionScreen({ navigation }) {
     }
   }, []);
 
+  // ── Live Nominatim text search while typing ───────────────────────────────
+  useEffect(() => {
+    const q = search.trim();
+
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+
+    if (q.length < 2) {
+      setRemoteResults(null);
+      setSearching(false);
+      return;
+    }
+
+    searchTimerRef.current = setTimeout(async () => {
+      const reqId = ++searchReqRef.current;
+      setSearching(true);
+
+      try {
+        const places = await nominatimTextSearch(q);
+        if (reqId !== searchReqRef.current) return;
+
+        const origin = userLocation || { lat: -26.2041, lng: 28.0473 };
+        const parsed = parseNominatimResults(places, origin.lat, origin.lng);
+        setRemoteResults(parsed);
+      } catch (err) {
+        if (reqId !== searchReqRef.current) return;
+        console.warn('[Nominatim] text search:', err.message);
+        setRemoteResults([]);
+      } finally {
+        if (reqId === searchReqRef.current) setSearching(false);
+      }
+    }, 400);
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [search, userLocation]);
+
   // ── Client-side filter + search ───────────────────────────────────────────
   useEffect(() => {
-    let results = facilities;
+    const source = search.trim().length >= 2 && remoteResults != null ? remoteResults : facilities;
+    let results = source;
     if (typeFilter  !== 'all') results = results.filter(f => f.type      === typeFilter);
     if (ownerFilter !== 'all') results = results.filter(f => f.ownership === ownerFilter);
-    if (search.trim()) {
+    if (search.trim().length >= 2 && remoteResults == null) {
       const q = search.trim().toLowerCase();
       results = results.filter(
         f => f.name.toLowerCase().includes(q) || f.address.toLowerCase().includes(q)
       );
     }
     setFiltered(results);
-  }, [facilities, typeFilter, ownerFilter, search]);
+  }, [facilities, remoteResults, typeFilter, ownerFilter, search]);
 
   const handleSelect = facility => {
     Keyboard.dismiss();
@@ -340,6 +415,9 @@ export default function FacilitySelectionScreen({ navigation }) {
               <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
             </TouchableOpacity>
           )}
+          {searching && (
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          )}
         </LinearGradient>
       </View>
 
@@ -375,7 +453,9 @@ export default function FacilitySelectionScreen({ navigation }) {
         ))}
         {filtered.length > 0 && (
           <View style={styles.resultPill}>
-            <Text style={styles.resultCount}>{filtered.length} nearby</Text>
+            <Text style={styles.resultCount}>
+              {search.trim().length >= 2 ? `${filtered.length} found` : `${filtered.length} nearby`}
+            </Text>
           </View>
         )}
       </View>
@@ -461,8 +541,10 @@ export default function FacilitySelectionScreen({ navigation }) {
               <Ionicons name="search-outline" size={40} color={COLORS.textTertiary} />
               <Text style={styles.stateTitle}>No facilities found</Text>
               <Text style={styles.stateSub}>
-                {search
-                  ? 'Try a different search term or clear the filter'
+                {search.trim().length >= 2
+                  ? searching
+                    ? 'Searching OpenStreetMap...'
+                    : 'Try a different search term or clear the filter'
                   : 'No facilities found within 14 km. Pull down to refresh.'}
               </Text>
             </View>
