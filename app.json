@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false, 
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",
@@ -48,7 +48,8 @@
         {
           "photosPermission": "NcedoCare needs photo library access so you can upload documents or reports."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

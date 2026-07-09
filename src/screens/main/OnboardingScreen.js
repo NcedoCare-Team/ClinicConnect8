@@ -12,13 +12,13 @@ import { updateProfile } from 'firebase/auth';
 import { auth } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
-import DateOfBirthPicker, { ageFromDateParts, formatDob } from '../../components/DateOfBirthPicker';
+import DateOfBirthField, { ageFromDate, formatDobISO } from '../../components/DateOfBirthField';
 
 export default function OnboardingScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName,  setLastName]  = useState('');
   const [idNumber,  setIdNumber]  = useState('');
-  const [dob, setDob] = useState({ year: 1990, month: 1, day: 1 });
+  const [dob, setDob] = useState(new Date(1990, 0, 1));
   const [saving, setSaving] = useState(false);
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -36,13 +36,13 @@ export default function OnboardingScreen() {
     if (!lastName.trim())  return Alert.alert('Required', 'Please enter your last name.');
     if (!idNumber.trim())  return Alert.alert('Required', 'Please enter your ID or passport number.');
 
-    const age = ageFromDateParts(dob);
+    const age = ageFromDate(dob);
     if (age === null) return Alert.alert('Required', 'Please select a valid date of birth.');
 
     setSaving(true);
     try {
       const displayName = `${firstName.trim()} ${lastName.trim()}`;
-      const dateOfBirth = formatDob(dob);
+      const dateOfBirth = formatDobISO(dob);
 
       if (auth.currentUser) {
         await updateProfile(auth.currentUser, { displayName });
@@ -130,7 +130,7 @@ export default function OnboardingScreen() {
               </View>
 
               <Text style={s.label}>Date of Birth</Text>
-              <DateOfBirthPicker value={dob} onChange={setDob} />
+              <DateOfBirthField value={dob} onChange={setDob} />
             </View>
 
             <View style={s.securityNote}>

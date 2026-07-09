@@ -1,6 +1,6 @@
 // Assessment tab — choose consultation mode (text chat or live — coming soon)
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Alert,
   ScrollView, StatusBar, useWindowDimensions,
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { LAYOUT } from '../../components/layout/ScreenHeader';
 import { useFacility } from '../../contexts/FacilityContext';
+import FacilityConfirmModal from '../../components/FacilityConfirmModal';
 
 function AssessmentHeader() {
   return (
@@ -55,8 +56,27 @@ export default function SmartChatScreen({ navigation }) {
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width - LAYOUT.screenPadding * 2, 420);
   const { hasFacility, facilityName, ready } = useFacility();
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
 
-  const confirmFacilityThen = (onConfirmed) => {
+  const runPendingAction = () => {
+    if (pendingAction === 'text') {
+      navigation.navigate('ChatConversation', {
+        conversationId: null,
+        conversationTitle: 'Health Assessment',
+        facilityName,
+      });
+    } else if (pendingAction === 'live') {
+      Alert.alert(
+        'Live Chat',
+        'Real-time voice consultation is coming soon. We\'re designing an experience that feels natural and safe — check back shortly.',
+        [{ text: 'OK' }],
+      );
+    }
+    setPendingAction(null);
+  };
+
+  const confirmFacilityThen = (action) => {
     if (!ready) return;
 
     if (!hasFacility) {
@@ -74,40 +94,35 @@ export default function SmartChatScreen({ navigation }) {
       return;
     }
 
-    Alert.alert(
-      'Confirm your facility',
-      `Start your health assessment with ${facilityName}?\n\nYour care journey will be linked to this facility.`,
-      [
-        { text: 'Change facility', onPress: () => navigation.navigate('FacilitySelection') },
-        { text: 'Confirm & continue', onPress: onConfirmed },
-      ],
-    );
+    setPendingAction(action);
+    setShowConfirmModal(true);
   };
 
-  const startTextConsultation = () => {
-    confirmFacilityThen(() => {
-      navigation.navigate('ChatConversation', {
-        conversationId: null,
-        conversationTitle: 'Health Assessment',
-        facilityName,
-      });
-    });
-  };
-
-  const startLiveChat = () => {
-    confirmFacilityThen(() => {
-      Alert.alert(
-        'Live Chat',
-        'Real-time voice consultation is coming soon. We\'re designing an experience that feels natural and safe — check back shortly.',
-        [{ text: 'OK' }],
-      );
-    });
-  };
+  const startTextConsultation = () => confirmFacilityThen('text');
+  const startLiveChat = () => confirmFacilityThen('live');
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AssessmentHeader />
+
+      <FacilityConfirmModal
+        visible={showConfirmModal}
+        facilityName={facilityName}
+        onConfirm={() => {
+          setShowConfirmModal(false);
+          runPendingAction();
+        }}
+        onChangeFacility={() => {
+          setShowConfirmModal(false);
+          setPendingAction(null);
+          navigation.navigate('FacilitySelection');
+        }}
+        onCancel={() => {
+          setShowConfirmModal(false);
+          setPendingAction(null);
+        }}
+      />
 
       <View style={styles.bodySheet}>
         <ScrollView
@@ -118,10 +133,9 @@ export default function SmartChatScreen({ navigation }) {
           <View style={[styles.centerBlock, { width: contentWidth, maxWidth: contentWidth }]}>
             <Text style={styles.sectionLabel}>Start your consultation</Text>
             {hasFacility ? (
-              <View style={styles.facilityConfirmRow}>
-                <Ionicons name="business-outline" size={16} color={COLORS.primary} />
-                <Text style={styles.facilityConfirmText} numberOfLines={2}>
-                  Connected to {facilityName}
+              <View style={styles.facilityNameWrap}>
+                <Text style={styles.facilityNameOnly} numberOfLines={2}>
+                  {facilityName}
                 </Text>
               </View>
             ) : (
@@ -371,23 +385,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-  facilityConfirmRow: {
-    flexDirection: 'row',
+  facilityNameWrap: {
+    alignSelf: 'stretch',
     alignItems: 'center',
-    gap: 8,
-    alignSelf: 'center',
-    backgroundColor: COLORS.primaryVeryLight,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
-    marginBottom: 14,
-    maxWidth: '100%',
+    justifyContent: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
   },
-  facilityConfirmText: {
-    flexShrink: 1,
-    fontSize: 13,
-    fontWeight: '700',
+  facilityNameOnly: {
+    fontSize: 18,
+    fontWeight: '900',
     color: COLORS.primary,
+    textAlign: 'center',
+    lineHeight: 24,
+    letterSpacing: -0.3,
   },
   facilityMissingRow: {
     flexDirection: 'row',

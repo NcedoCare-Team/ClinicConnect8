@@ -245,40 +245,66 @@ export default function FacilitySelectionScreen({ navigation }) {
   };
 
   // ── Render helpers ────────────────────────────────────────────────────────
-  const renderFacility = ({ item }) => {
+  const renderFacility = ({ item, index }) => {
     const cfg     = TYPE_CONFIG[item.type] || TYPE_CONFIG.clinic;
     const dist    = item.distance < 999 ? distanceLabel(item.distance) : null;
     const distCol = item.distance < 999 ? distanceColor(item.distance) : COLORS.textTertiary;
+    const isNearest = index === 0 && !search.trim() && typeFilter === 'all' && ownerFilter === 'all';
 
     return (
-      <TouchableOpacity style={styles.facilityCard} onPress={() => handleSelect(item)} activeOpacity={0.82}>
-        <View style={[styles.facilityIconBox, { backgroundColor: cfg.bg }]}>
-          <Ionicons name={cfg.icon} size={22} color={cfg.color} />
-        </View>
+      <TouchableOpacity
+        style={[styles.facilityCard, isNearest && styles.facilityCardFeatured]}
+        onPress={() => handleSelect(item)}
+        activeOpacity={0.88}>
+        {isNearest && (
+          <View style={styles.nearestRibbon}>
+            <Ionicons name="star" size={10} color="#FFFFFF" />
+            <Text style={styles.nearestRibbonText}>Nearest to you</Text>
+          </View>
+        )}
+
+        <View style={[styles.cardAccent, { backgroundColor: cfg.color }]} />
+
+        <LinearGradient
+          colors={[cfg.bg, '#FFFFFF']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={styles.facilityIconBox}>
+          <Ionicons name={cfg.icon} size={24} color={cfg.color} />
+        </LinearGradient>
+
         <View style={styles.facilityInfo}>
           <Text style={styles.facilityName} numberOfLines={2}>{item.name}</Text>
           <View style={styles.facilityMeta}>
             <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
               <Text style={[styles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
             </View>
-            {item.ownership === 'private' && (
-              <View style={[styles.badge, { backgroundColor: COLORS.infoLight }]}>
-                <Text style={[styles.badgeText, { color: COLORS.info }]}>Private</Text>
-              </View>
-            )}
+            <View style={[styles.badge, {
+              backgroundColor: item.ownership === 'private' ? COLORS.infoLight : COLORS.lowLight,
+            }]}>
+              <Text style={[styles.badgeText, {
+                color: item.ownership === 'private' ? COLORS.info : COLORS.low,
+              }]}>
+                {item.ownership === 'private' ? 'Private' : 'Public'}
+              </Text>
+            </View>
           </View>
           {item.address ? (
-            <Text style={styles.facilityAddress} numberOfLines={1}>{item.address}</Text>
+            <View style={styles.addressRow}>
+              <Ionicons name="location-outline" size={12} color={COLORS.textTertiary} />
+              <Text style={styles.facilityAddress} numberOfLines={1}>{item.address}</Text>
+            </View>
           ) : null}
         </View>
+
         <View style={styles.facilityRight}>
           {dist ? (
-            <>
+            <View style={[styles.distPill, { backgroundColor: `${distCol}18` }]}>
               <Text style={[styles.distValue, { color: distCol }]}>{dist}</Text>
-              <Text style={styles.distLabel}>away</Text>
-            </>
+            </View>
           ) : null}
-          <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} style={{ marginTop: 4 }} />
+          <View style={styles.chevronCircle}>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -286,32 +312,49 @@ export default function FacilitySelectionScreen({ navigation }) {
 
   const ListHeader = () => (
     <>
-      <View style={styles.searchWrap}>
-        <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} />
-        <TextInput
-          ref={searchRef}
-          style={styles.searchInput}
-          placeholder="Search by name or area..."
-          placeholderTextColor={COLORS.textTertiary}
-          value={search}
-          onChangeText={setSearch}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
-          </TouchableOpacity>
-        )}
+      <View style={styles.heroHint}>
+        <Ionicons name="navigate-circle" size={18} color={COLORS.primary} />
+        <Text style={styles.heroHintText}>
+          Choose a facility near you to connect your care journey
+        </Text>
       </View>
 
+      <View style={styles.searchWrap}>
+        <LinearGradient
+          colors={['#FFFFFF', COLORS.primaryVeryLight]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          style={styles.searchGradient}>
+          <Ionicons name="search" size={18} color={COLORS.primary} />
+          <TextInput
+            ref={searchRef}
+            style={styles.searchInput}
+            placeholder="Search hospitals, clinics, area..."
+            placeholderTextColor={COLORS.textTertiary}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </LinearGradient>
+      </View>
+
+      <Text style={styles.filterLabel}>Filter by type</Text>
       <View style={styles.filterRow}>
         {FACILITY_TYPES.map(t => (
           <TouchableOpacity
             key={t.id}
             style={[styles.filterChip, typeFilter === t.id && styles.filterChipActive]}
             onPress={() => setTypeFilter(t.id)}>
-            <Ionicons name={t.icon} size={12} color={typeFilter === t.id ? COLORS.primary : COLORS.textSecondary} />
+            <Ionicons
+              name={t.icon}
+              size={13}
+              color={typeFilter === t.id ? '#FFFFFF' : COLORS.textSecondary}
+            />
             <Text style={[styles.filterChipText, typeFilter === t.id && styles.filterChipTextActive]}>
               {t.label}
             </Text>
@@ -319,7 +362,7 @@ export default function FacilitySelectionScreen({ navigation }) {
         ))}
       </View>
 
-      <View style={[styles.filterRow, { marginBottom: 6 }]}>
+      <View style={[styles.filterRow, styles.ownerRow]}>
         {OWNERSHIP_TYPES.map(o => (
           <TouchableOpacity
             key={o.id}
@@ -331,7 +374,9 @@ export default function FacilitySelectionScreen({ navigation }) {
           </TouchableOpacity>
         ))}
         {filtered.length > 0 && (
-          <Text style={styles.resultCount}>{filtered.length} found</Text>
+          <View style={styles.resultPill}>
+            <Text style={styles.resultCount}>{filtered.length} nearby</Text>
+          </View>
         )}
       </View>
     </>
@@ -429,108 +474,190 @@ export default function FacilitySelectionScreen({ navigation }) {
   );
 }
 
-function ScreenHeader({ onBack, subtitle }) {
+function ScreenHeader({ onBack, subtitle, count }) {
   return (
     <LinearGradient
-      colors={[COLORS.primaryDark, COLORS.primary]}
+      colors={['#1E3A8A', COLORS.primaryDark, COLORS.primary]}
       start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
       style={styles.header}>
+      <View style={styles.headerDeco1} />
+      <View style={styles.headerDeco2} />
+
       <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-        <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+        <View style={styles.backBtnInner}>
+          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+        </View>
       </TouchableOpacity>
+
       <View style={styles.headerText}>
-        <Text style={styles.headerTitle}>Select a Facility</Text>
+        <Text style={styles.headerEyebrow}>Healthcare near you</Text>
+        <Text style={styles.headerTitle}>Find your facility</Text>
         {subtitle ? <Text style={styles.headerSub}>{subtitle}</Text> : null}
       </View>
+
       <View style={styles.locationPill}>
-        <Ionicons name="location" size={16} color="#FFFFFF" />
+        <Ionicons name="location" size={18} color="#FFFFFF" />
       </View>
     </LinearGradient>
   );
 }
 
 const cardShadow = Platform.select({
-  ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8 },
-  android: { elevation: 3 },
+  ios:     { shadowColor: '#1E3A8A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 14 },
+  android: { elevation: 4 },
 });
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
+  container: { flex: 1, backgroundColor: '#F1F5F9' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     paddingTop:    Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 0) + 16,
-    paddingBottom: 20, paddingHorizontal: 20,
+    paddingBottom: 24, paddingHorizontal: 20,
+    position: 'relative', overflow: 'hidden',
   },
-  backBtn:     { padding: 6 },
-  headerText:  { flex: 1 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.4 },
-  headerSub:   { fontSize: 11, color: 'rgba(255,255,255,0.68)', marginTop: 2 },
-  locationPill:{
-    width: 36, height: 36, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+  headerDeco1: {
+    position: 'absolute', top: -30, right: -20,
+    width: 120, height: 120, borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  headerDeco2: {
+    position: 'absolute', bottom: -40, left: -20,
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  backBtn:     { zIndex: 2 },
+  backBtnInner: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
-
-  listContent: { paddingTop: 16, paddingHorizontal: 20 },
-
-  searchWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1.5, borderColor: COLORS.border,
-    paddingHorizontal: 14, height: 50, marginBottom: 14, ...cardShadow,
+  headerText:  { flex: 1, zIndex: 2 },
+  headerEyebrow: {
+    fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.72)',
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2,
   },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.textPrimary },
+  headerTitle: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.5 },
+  headerSub:   { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 4, fontWeight: '500' },
+  locationPill:{
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center', zIndex: 2,
+  },
 
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  listContent: { paddingTop: 8, paddingHorizontal: 18, paddingBottom: 8 },
+
+  heroHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FFFFFF', borderRadius: 14,
+    padding: 14, marginBottom: 14,
+    borderWidth: 1, borderColor: COLORS.primaryGlow,
+    ...cardShadow,
+  },
+  heroHintText: {
+    flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.textSecondary, lineHeight: 18,
+  },
+
+  searchWrap: { marginBottom: 16, borderRadius: 16, overflow: 'hidden', ...cardShadow },
+  searchGradient: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, height: 54,
+    borderWidth: 1.5, borderColor: COLORS.primaryGlow, borderRadius: 16,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.textPrimary, fontWeight: '500' },
+
+  filterLabel: {
+    fontSize: 11, fontWeight: '800', color: COLORS.textTertiary,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10, marginLeft: 4,
+  },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  ownerRow: { marginBottom: 8 },
   filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22,
     backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: COLORS.border,
   },
-  filterChipActive:     { backgroundColor: COLORS.primaryVeryLight, borderColor: COLORS.primary },
-  filterChipText:       { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
-  filterChipTextActive: { color: COLORS.primary },
+  filterChipActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterChipText:       { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary },
+  filterChipTextActive: { color: '#FFFFFF' },
 
   ownerChip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 22,
     backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: COLORS.border,
   },
   ownerChipActive:     { backgroundColor: COLORS.primaryVeryLight, borderColor: COLORS.primary },
-  ownerChipText:       { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
+  ownerChipText:       { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary },
   ownerChipTextActive: { color: COLORS.primary },
-  resultCount:         { marginLeft: 'auto', fontSize: 12, color: COLORS.textTertiary, fontWeight: '500', alignSelf: 'center' },
+  resultPill: {
+    marginLeft: 'auto', alignSelf: 'center',
+    backgroundColor: COLORS.primaryVeryLight,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+  },
+  resultCount: { fontSize: 12, color: COLORS.primary, fontWeight: '800' },
 
   facilityCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: COLORS.borderLight, ...cardShadow,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, marginBottom: 14,
+    borderWidth: 1, borderColor: COLORS.borderLight,
+    position: 'relative', overflow: 'hidden',
+    ...cardShadow,
+  },
+  facilityCardFeatured: {
+    borderColor: COLORS.primaryGlow,
+    borderWidth: 1.5,
+  },
+  nearestRibbon: {
+    position: 'absolute', top: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderBottomLeftRadius: 14,
+    zIndex: 1,
+  },
+  nearestRibbonText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF' },
+  cardAccent: {
+    position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
+    borderTopLeftRadius: 20, borderBottomLeftRadius: 20,
   },
   facilityIconBox: {
-    width: 48, height: 48, borderRadius: 14,
+    width: 52, height: 52, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    marginLeft: 6,
   },
-  facilityInfo:    { flex: 1, gap: 4 },
-  facilityName:    { fontSize: 14, fontWeight: '800', color: COLORS.textPrimary, lineHeight: 18 },
+  facilityInfo:    { flex: 1, gap: 6, paddingRight: 4 },
+  facilityName:    { fontSize: 15, fontWeight: '900', color: COLORS.textPrimary, lineHeight: 20 },
   facilityMeta:    { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  badge:           { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
-  badgeText:       { fontSize: 10, fontWeight: '700' },
-  facilityAddress: { fontSize: 11, color: COLORS.textTertiary, fontWeight: '500' },
-  facilityRight:   { alignItems: 'center', gap: 2, minWidth: 44 },
-  distValue:       { fontSize: 14, fontWeight: '800' },
-  distLabel:       { fontSize: 10, color: COLORS.textTertiary, fontWeight: '500' },
+  badge:           { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  badgeText:       { fontSize: 10, fontWeight: '800' },
+  addressRow:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  facilityAddress: { flex: 1, fontSize: 11, color: COLORS.textTertiary, fontWeight: '500' },
+  facilityRight:   { alignItems: 'center', gap: 8, minWidth: 48 },
+  distPill:        { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  distValue:       { fontSize: 13, fontWeight: '900' },
+  chevronCircle: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: COLORS.primaryVeryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   centered:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 12 },
   stateIcon: {
-    width: 80, height: 80, borderRadius: 24,
-    backgroundColor: COLORS.backgroundTertiary,
+    width: 88, height: 88, borderRadius: 28,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+    borderWidth: 1, borderColor: COLORS.borderLight,
+    ...cardShadow,
   },
-  stateTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textPrimary, textAlign: 'center' },
-  stateSub:   { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
+  stateTitle: { fontSize: 20, fontWeight: '900', color: COLORS.textPrimary, textAlign: 'center' },
+  stateSub:   { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },
   retryBtn:   {
-    backgroundColor: COLORS.primary, borderRadius: 14,
-    paddingHorizontal: 28, paddingVertical: 13, marginTop: 8,
+    backgroundColor: COLORS.primary, borderRadius: 16,
+    paddingHorizontal: 32, paddingVertical: 14, marginTop: 8,
+    ...Platform.select({
+      ios: { shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+      android: { elevation: 4 },
+    }),
   },
-  retryBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-  emptyWrap:    { paddingTop: 40, alignItems: 'center', gap: 10, paddingHorizontal: 20 },
+  retryBtnText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+  emptyWrap:    { paddingTop: 48, alignItems: 'center', gap: 12, paddingHorizontal: 24 },
 });
