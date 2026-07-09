@@ -9,63 +9,50 @@ import { auth, firestore } from '../../../firebase';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { StorageService } from '../../utils/storage';
 import { COLORS } from '../../constants/colors';
 
-const ROLES = [
-  { value: 'patient',  label: 'Patient',        icon: 'person-outline' },
-  { value: 'nurse',    label: 'Nurse / Triage',  icon: 'medical-outline' },
-  { value: 'doctor',   label: 'Doctor',          icon: 'fitness-outline' },
-];
+export default function LoginScreen() {
+  const [isLogin, setIsLogin]               = useState(true);
+  const [email, setEmail]                   = useState('');
+  const [password, setPassword]             = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading]               = useState(false);
+  const [showPassword, setShowPassword]     = useState(false);
+  const [showConfirm, setShowConfirm]       = useState(false);
 
-export default function LoginScreen({ navigation }) {
-  const [isLogin, setIsLogin]           = useState(true);
-  const [email, setEmail]               = useState('');
-  const [password, setPassword]         = useState('');
-  const [name, setName]                 = useState('');
-  const [role, setRole]                 = useState('patient');
-  const [loading, setLoading]           = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  const createUserDocument = async (user, additionalData = {}) => {
+  const createUserDocument = async (user) => {
     if (!user) return;
     const userRef  = doc(firestore, 'users', user.uid);
     const snapshot = await getDoc(userRef);
     const now      = new Date();
 
     if (!snapshot.exists()) {
-      try {
-        await setDoc(userRef, {
-          displayName: user.displayName || additionalData.displayName || '',
-          email: user.email,
-          role: additionalData.role || 'patient',
-          createdAt: now,
-          lastLogin: now,
-          ...additionalData,
-        });
-      } catch (err) {
-        console.error('Error creating user document:', err);
-      }
+      await setDoc(userRef, {
+        email: user.email,
+        role: 'patient',
+        createdAt: now,
+        lastLogin: now,
+      });
     } else {
-      await setDoc(userRef, { lastLogin: now, ...additionalData }, { merge: true });
+      await setDoc(userRef, { lastLogin: now }, { merge: true });
     }
   };
 
   const handleSignUp = async () => {
-    if (!name.trim())        return Alert.alert('Error', 'Please enter your name');
     if (!email.trim())       return Alert.alert('Error', 'Please enter your email');
     if (password.length < 6) return Alert.alert('Error', 'Password must be at least 6 characters');
+    if (password !== confirmPassword) {
+      return Alert.alert('Error', 'Passwords do not match');
+    }
 
     setLoading(true);
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(user, { displayName: name.trim() });
-      await createUserDocument(user, { displayName: name.trim(), role });
+      await createUserDocument(user);
       await StorageService.saveUserSession(user.uid, user.email);
-      Alert.alert('Success', 'Account created successfully!');
     } catch (error) {
       const msgs = {
         'auth/email-already-in-use': 'This email is already registered',
@@ -84,7 +71,7 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       const { user } = await signInWithEmailAndPassword(auth, email, password);
-      await createUserDocument(user, { lastLogin: new Date() });
+      await createUserDocument(user);
       await StorageService.saveUserSession(user.uid, user.email);
     } catch {
       Alert.alert('Error', 'Invalid email or password. Please try again.');
@@ -95,7 +82,9 @@ export default function LoginScreen({ navigation }) {
 
   const toggleForm = () => {
     setIsLogin(!isLogin);
-    setEmail(''); setPassword(''); setName('');
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
   };
 
   return (
@@ -103,7 +92,6 @@ export default function LoginScreen({ navigation }) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kbView}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <Ionicons name="heart-circle" size={64} color={COLORS.primary} />
@@ -112,9 +100,7 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.subtitle}>Smarter care for stronger communities</Text>
           </View>
 
-          {/* Form */}
           <View style={styles.formContainer}>
-            {/* Toggle */}
             <View style={styles.toggleContainer}>
               <TouchableOpacity
                 style={[styles.toggleButton, isLogin && styles.toggleButtonActive]}
@@ -128,46 +114,13 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
+            {!isLogin && (
+              <Text style={styles.registerHint}>
+                Create your account to access secure patient care. You will complete your profile next.
+              </Text>
+            )}
+
             <View style={styles.inputsContainer}>
-              {!isLogin && (
-                <>
-                  {/* Name */}
-                  <View style={styles.inputWrapper}>
-                    <Text style={styles.label}>Full Name</Text>
-                    <View style={styles.inputContainer}>
-                      <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} />
-                      <TextInput
-                        style={styles.input} placeholder="Enter your name"
-                        placeholderTextColor={COLORS.textTertiary}
-                        value={name} onChangeText={setName} editable={!loading}
-                      />
-                    </View>
-                  </View>
-
-                  {/* Role selector */}
-                  <View style={styles.inputWrapper}>
-                    <Text style={styles.label}>I am a</Text>
-                    <View style={styles.rolesRow}>
-                      {ROLES.map(r => (
-                        <TouchableOpacity
-                          key={r.value}
-                          style={[styles.roleChip, role === r.value && styles.roleChipActive]}
-                          onPress={() => setRole(r.value)} disabled={loading}>
-                          <Ionicons
-                            name={r.icon} size={16}
-                            color={role === r.value ? COLORS.primary : COLORS.textSecondary}
-                          />
-                          <Text style={[styles.roleText, role === r.value && styles.roleTextActive]}>
-                            {r.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                </>
-              )}
-
-              {/* Email */}
               <View style={styles.inputWrapper}>
                 <Text style={styles.label}>Email</Text>
                 <View style={styles.inputContainer}>
@@ -181,13 +134,12 @@ export default function LoginScreen({ navigation }) {
                 </View>
               </View>
 
-              {/* Password */}
               <View style={styles.inputWrapper}>
                 <Text style={styles.label}>Password</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} />
                   <TextInput
-                    style={styles.input} placeholder="Enter your password"
+                    style={styles.input} placeholder="At least 6 characters"
                     placeholderTextColor={COLORS.textTertiary}
                     value={password} onChangeText={setPassword}
                     secureTextEntry={!showPassword} editable={!loading}
@@ -201,6 +153,27 @@ export default function LoginScreen({ navigation }) {
                 </View>
               </View>
 
+              {!isLogin && (
+                <View style={styles.inputWrapper}>
+                  <Text style={styles.label}>Confirm Password</Text>
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} />
+                    <TextInput
+                      style={styles.input} placeholder="Re-enter your password"
+                      placeholderTextColor={COLORS.textTertiary}
+                      value={confirmPassword} onChangeText={setConfirmPassword}
+                      secureTextEntry={!showConfirm} editable={!loading}
+                    />
+                    <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                      <Ionicons
+                        name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
+                        size={20} color={COLORS.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {isLogin && (
                 <TouchableOpacity style={styles.forgotPassword}>
                   <Text style={styles.forgotPasswordText}>Forgot password?</Text>
@@ -208,7 +181,6 @@ export default function LoginScreen({ navigation }) {
               )}
             </View>
 
-            {/* Submit */}
             <TouchableOpacity
               style={[styles.submitButton, loading && styles.submitButtonDisabled]}
               onPress={isLogin ? handleLogin : handleSignUp} disabled={loading}>
@@ -225,9 +197,8 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Privacy note */}
             <Text style={styles.privacyNote}>
-              Your data is encrypted and stored securely. NcedoCare complies with POPIA.
+              Protected under POPIA. Your information is encrypted and shared only with your chosen healthcare facility.
             </Text>
           </View>
         </ScrollView>
@@ -253,12 +224,17 @@ const styles = StyleSheet.create({
   },
   toggleContainer: {
     flexDirection: 'row', backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: 12, padding: 4, marginBottom: 24,
+    borderRadius: 12, padding: 4, marginBottom: 16,
   },
   toggleButton:       { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
   toggleButtonActive: { backgroundColor: COLORS.primary },
   toggleText:         { fontSize: 15, fontWeight: '600', color: COLORS.textSecondary },
   toggleTextActive:   { color: COLORS.white },
+
+  registerHint: {
+    fontSize: 13, color: COLORS.textSecondary, lineHeight: 19,
+    marginBottom: 20, textAlign: 'center',
+  },
 
   inputsContainer: { marginBottom: 24 },
   inputWrapper:    { marginBottom: 16 },
@@ -269,16 +245,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.border,
   },
   input: { flex: 1, fontSize: 15, color: COLORS.textPrimary, marginLeft: 10 },
-
-  rolesRow:     { flexDirection: 'row', gap: 8 },
-  roleChip:     {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    paddingVertical: 10, borderRadius: 10, backgroundColor: COLORS.backgroundSecondary,
-    borderWidth: 1.5, borderColor: COLORS.border,
-  },
-  roleChipActive: { backgroundColor: COLORS.primaryVeryLight, borderColor: COLORS.primary },
-  roleText:       { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
-  roleTextActive: { color: COLORS.primary },
 
   forgotPassword:     { alignSelf: 'flex-end', marginTop: 4 },
   forgotPasswordText: { fontSize: 13, fontWeight: '600', color: COLORS.primary },

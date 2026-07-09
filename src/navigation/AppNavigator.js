@@ -1,5 +1,6 @@
 // src/navigation/AppNavigator.js
-// NcedoCare auth-aware navigator.
+// Flow: Login → (first time) Profile onboarding → Main dashboard
+// Facility connection is optional from Home → FacilitySelection → FacilityWelcome
 
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
@@ -24,6 +25,13 @@ export default function AppNavigator() {
   const [user,           setUser]           = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [onboardingDone, setOnboardingDone] = useState(true);
+
+  useEffect(() => {
+    const unsub = UserProfileService.subscribeOnboarding((done) => {
+      setOnboardingDone(done);
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     SleepTrackingService.init();
@@ -72,11 +80,12 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
+        {!user ? (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        ) : !onboardingDone ? (
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ animation: 'fade' }} />
+        ) : (
           <>
-            {!onboardingDone && (
-              <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ animation: 'fade' }} />
-            )}
             <Stack.Screen name="Main" component={MainScreen} />
             <Stack.Screen
               name="ChatConversation"
@@ -99,8 +108,6 @@ export default function AppNavigator() {
               options={{ animation: 'slide_from_right', gestureEnabled: true }}
             />
           </>
-        ) : (
-          <Stack.Screen name="Login" component={LoginScreen} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

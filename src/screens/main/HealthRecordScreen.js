@@ -16,6 +16,7 @@ import { COLORS } from '../../constants/colors';
 import { ScreenHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 import { SessionService } from '../../services/SessionService';
 import { UserProfileService } from '../../services/UserProfileService';
+import { useFacility } from '../../contexts/FacilityContext';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PRIORITY_CFG = {
@@ -58,6 +59,7 @@ function shortId(uid) {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function HealthRecordScreen() {
+  const { session: facilitySession } = useFacility();
   const [cases,      setCases]      = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,10 +71,10 @@ export default function HealthRecordScreen() {
   useEffect(() => {
     loadPatient();
     loadCases();
-  }, []);
+  }, [facilitySession]);
 
   const loadPatient = async () => {
-    const session = SessionService.getSession();
+    const session = facilitySession || SessionService.getSession();
     const profile = await UserProfileService.getProfile();
     setPatient({ ...profile, ...session });
   };

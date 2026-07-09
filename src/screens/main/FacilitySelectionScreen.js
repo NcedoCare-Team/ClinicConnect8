@@ -164,6 +164,11 @@ export default function FacilitySelectionScreen({ navigation }) {
 
   useEffect(() => { requestLocation(); }, []);
 
+  const handleBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Main');
+  };
+
   const requestLocation = async () => {
     setLocationStatus('loading');
     try {
@@ -335,7 +340,7 @@ export default function FacilitySelectionScreen({ navigation }) {
   if (locationStatus === 'loading') {
     return (
       <View style={styles.container}>
-        <ScreenHeader onBack={() => navigation.goBack()} />
+        <ScreenHeader onBack={handleBack} />
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.stateTitle}>Getting your location...</Text>
@@ -348,7 +353,7 @@ export default function FacilitySelectionScreen({ navigation }) {
   if (locationStatus === 'denied') {
     return (
       <View style={styles.container}>
-        <ScreenHeader onBack={() => navigation.goBack()} />
+        <ScreenHeader onBack={handleBack} />
         <View style={styles.centered}>
           <View style={styles.stateIcon}>
             <Ionicons name="location-outline" size={40} color={COLORS.textTertiary} />
@@ -368,7 +373,10 @@ export default function FacilitySelectionScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} translucent />
-      <ScreenHeader onBack={() => navigation.goBack()} subtitle="Within 14 km of your location" />
+      <ScreenHeader
+        onBack={handleBack}
+        subtitle="Within 14 km of your location"
+      />
 
       {fetching ? (
         <View style={styles.centered}>

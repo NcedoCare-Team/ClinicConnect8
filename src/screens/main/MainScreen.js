@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
+import { SessionService } from '../../services/SessionService';
 
 import HomeScreen               from './HomeScreen';
 import SmartChatScreen          from './SmartChatScreen';
@@ -53,6 +54,11 @@ export default function MainScreen({ navigation, route }) {
   useEffect(() => {
     if (route?.params?.tab) changeTab(route.params.tab);
   }, [route?.params?.tab, changeTab]);
+
+  useEffect(() => {
+    const pending = SessionService.consumePendingMainTab();
+    if (pending) changeTab(pending);
+  }, [changeTab]);
 
   const ActiveComponent = TAB_MAP[activeTab];
 

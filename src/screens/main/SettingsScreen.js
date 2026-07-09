@@ -14,6 +14,7 @@ import { auth } from '../../../firebase';
 import { signOut, updatePassword } from 'firebase/auth';
 import { StorageService } from '../../utils/storage';
 import { UserProfileService } from '../../services/UserProfileService';
+import { useFacility } from '../../contexts/FacilityContext';
 import { ProfileHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 
 const LANGUAGES = [
@@ -62,6 +63,7 @@ const PROFILE_SECTIONS = [
 ];
 
 export default function SettingsScreen({ navigation }) {
+  const { facilityName } = useFacility();
   const [profile, setProfile] = useState({
     displayName: auth.currentUser?.displayName || '',
     email: auth.currentUser?.email || '',
@@ -181,6 +183,7 @@ export default function SettingsScreen({ navigation }) {
     else if (key === 'medical') setExpandedSection(expandedSection === 'medical' ? null : 'medical');
     else if (key === 'security') setExpandedSection(expandedSection === 'security' ? null : 'security');
     else if (key === 'app') setExpandedSection(expandedSection === 'app' ? null : 'app');
+    else if (key === 'facility') navigation.navigate('FacilitySelection');
     else Alert.alert('Coming soon', 'This section will be available in a future update.');
   };
 
@@ -191,6 +194,7 @@ export default function SettingsScreen({ navigation }) {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
+          // Keep per-user facility choice in AsyncStorage so it restores on next login
           await UserProfileService.clearAll();
           await signOut(auth);
           await StorageService.clearUserSession();
@@ -199,7 +203,7 @@ export default function SettingsScreen({ navigation }) {
     ]);
   };
 
-  const facility = profile.primaryFacility || profile.location || '';
+  const facility = facilityName || profile.primaryFacility || profile.location || '';
 
   return (
     <View style={styles.container}>

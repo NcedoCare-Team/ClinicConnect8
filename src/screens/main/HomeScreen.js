@@ -19,6 +19,7 @@ import FacilityBanner from '../../components/layout/FacilityBanner';
 import InsightCard from '../../components/insights/InsightCard';
 import { SessionService } from '../../services/SessionService';
 import { SleepTrackingService } from '../../services/SleepTrackingService';
+import { useFacility } from '../../contexts/FacilityContext';
 
 const STATUS_BADGE = {
   queued:    { label: 'Submitted', color: COLORS.medium,  bg: COLORS.mediumLight  },
@@ -27,6 +28,7 @@ const STATUS_BADGE = {
 };
 
 export default function HomeScreen({ navigation }) {
+  const { facilityName, hasFacility } = useFacility();
   const [facility,         setFacility]         = useState('');
   const [careItems,        setCareItems]        = useState([]);
   const [lastAssessment,   setLastAssessment]   = useState(null);
@@ -55,12 +57,16 @@ export default function HomeScreen({ navigation }) {
     return SleepTrackingService.addListener(data => setSleepData(data));
   }, []);
 
-  // Refresh facility name from in-memory session whenever this tab is focused
+  // Keep banner in sync with shared facility context
+  useEffect(() => {
+    if (facilityName) setFacility(facilityName);
+  }, [facilityName]);
+
   useFocusEffect(
     useCallback(() => {
-      const sessionFacility = SessionService.getFacilityName();
-      if (sessionFacility) setFacility(sessionFacility);
-    }, [])
+      if (facilityName) setFacility(facilityName);
+      else if (hasFacility) setFacility(SessionService.getFacilityName());
+    }, [facilityName, hasFacility])
   );
 
   const loadDashboard = useCallback(async () => {
@@ -68,7 +74,6 @@ export default function HomeScreen({ navigation }) {
     const uid = auth.currentUser?.uid;
     const profile = await UserProfileService.getProfile();
 
-    // Prefer in-memory session (not persisted across restarts), then fall back to profile
     const sessionFacility = SessionService.getFacilityName();
     setFacility(sessionFacility || profile.primaryFacility || profile.location || '');
 

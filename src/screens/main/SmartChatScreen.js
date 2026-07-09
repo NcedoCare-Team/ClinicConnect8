@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { LAYOUT } from '../../components/layout/ScreenHeader';
+import { useFacility } from '../../contexts/FacilityContext';
 
 function AssessmentHeader() {
   return (
@@ -53,20 +54,54 @@ function AssessmentHeader() {
 export default function SmartChatScreen({ navigation }) {
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width - LAYOUT.screenPadding * 2, 420);
+  const { hasFacility, facilityName, ready } = useFacility();
+
+  const confirmFacilityThen = (onConfirmed) => {
+    if (!ready) return;
+
+    if (!hasFacility) {
+      Alert.alert(
+        'Choose a healthcare facility',
+        'Connect to a healthcare facility before starting your assessment so your care team can follow your journey.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Find facilities',
+            onPress: () => navigation.navigate('FacilitySelection'),
+          },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Confirm your facility',
+      `Start your health assessment with ${facilityName}?\n\nYour care journey will be linked to this facility.`,
+      [
+        { text: 'Change facility', onPress: () => navigation.navigate('FacilitySelection') },
+        { text: 'Confirm & continue', onPress: onConfirmed },
+      ],
+    );
+  };
 
   const startTextConsultation = () => {
-    navigation.navigate('ChatConversation', {
-      conversationId: null,
-      conversationTitle: 'Health Assessment',
+    confirmFacilityThen(() => {
+      navigation.navigate('ChatConversation', {
+        conversationId: null,
+        conversationTitle: 'Health Assessment',
+        facilityName,
+      });
     });
   };
 
   const startLiveChat = () => {
-    Alert.alert(
-      'Live Chat',
-      'Real-time voice consultation is coming soon. We\'re designing an experience that feels natural and safe — check back shortly.',
-      [{ text: 'OK' }],
-    );
+    confirmFacilityThen(() => {
+      Alert.alert(
+        'Live Chat',
+        'Real-time voice consultation is coming soon. We\'re designing an experience that feels natural and safe — check back shortly.',
+        [{ text: 'OK' }],
+      );
+    });
   };
 
   return (
@@ -82,6 +117,25 @@ export default function SmartChatScreen({ navigation }) {
 
           <View style={[styles.centerBlock, { width: contentWidth, maxWidth: contentWidth }]}>
             <Text style={styles.sectionLabel}>Start your consultation</Text>
+            {hasFacility ? (
+              <View style={styles.facilityConfirmRow}>
+                <Ionicons name="business-outline" size={16} color={COLORS.primary} />
+                <Text style={styles.facilityConfirmText} numberOfLines={2}>
+                  Connected to {facilityName}
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.facilityMissingRow}
+                onPress={() => navigation.navigate('FacilitySelection')}
+                activeOpacity={0.85}>
+                <Ionicons name="location-outline" size={16} color={COLORS.warning} />
+                <Text style={styles.facilityMissingText}>
+                  Connect a healthcare facility before you start
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={COLORS.warning} />
+              </TouchableOpacity>
+            )}
             <Text style={styles.intro}>
               Choose how you'd like to begin. Your conversation is private and reviewed by your care team when needed.
             </Text>
@@ -316,6 +370,42 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textAlign: 'center',
     marginBottom: 8,
+  },
+  facilityConfirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'center',
+    backgroundColor: COLORS.primaryVeryLight,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginBottom: 14,
+    maxWidth: '100%',
+  },
+  facilityConfirmText: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  facilityMissingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'center',
+    backgroundColor: COLORS.warningLight,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginBottom: 14,
+    maxWidth: '100%',
+  },
+  facilityMissingText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.warning,
   },
   intro: {
     fontSize: 14,

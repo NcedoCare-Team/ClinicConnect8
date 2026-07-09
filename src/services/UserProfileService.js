@@ -22,11 +22,22 @@ const aboutMeDocRef = (uid) => doc(firestore, 'users', uid, 'profile', 'about_me
 // Default profile shape
 const DEFAULT_PROFILE = {
   displayName: '',
+  firstName: '',
+  lastName: '',
   email: '',
   phoneNumber: '',
+  dateOfBirth: '',
+  idNumber: '',
+  patientAge: null,
   location: '',
   bio: '',
-  // Professional / About Me
+  primaryFacility: '',
+  primaryFacilityId: '',
+  language: 'en',
+  chronicConditions: [],
+  allergies: '',
+  currentMedications: '',
+  // Professional / About Me (legacy)
   targetRole: '',
   skills: [],
   field: '',
@@ -83,10 +94,21 @@ export const UserProfileService = {
       const merged = {
         ...DEFAULT_PROFILE,
         displayName: mainData.displayName || userData.displayName || aboutData.firstName || '',
+        firstName: mainData.firstName || userData.firstName || aboutData.firstName || '',
+        lastName: mainData.lastName || userData.lastName || '',
         email: auth.currentUser?.email || userData.email || '',
         phoneNumber: mainData.phoneNumber || userData.phoneNumber || '',
+        dateOfBirth: mainData.dateOfBirth || userData.dateOfBirth || '',
+        idNumber: mainData.idNumber || userData.idNumber || '',
+        patientAge: mainData.patientAge ?? userData.patientAge ?? null,
         location: mainData.location || userData.location || '',
         bio: mainData.bio || userData.bio || '',
+        primaryFacility: mainData.primaryFacility || userData.primaryFacility || '',
+        primaryFacilityId: mainData.primaryFacilityId || userData.primaryFacilityId || '',
+        language: mainData.language || 'en',
+        chronicConditions: mainData.chronicConditions || [],
+        allergies: mainData.allergies || '',
+        currentMedications: mainData.currentMedications || '',
         targetRole: mainData.targetRole || aboutData.field || '',
         skills: mainData.skills?.length ? mainData.skills : (aboutData.skills || []),
         field: mainData.field || aboutData.field || '',
@@ -123,12 +145,19 @@ export const UserProfileService = {
     try {
       await setDoc(profileDocRef(uid), merged, { merge: true });
 
-      // Also update the root user doc for displayName / phoneNumber
+      // Also update the root user doc for identification + facility
       await setDoc(doc(firestore, 'users', uid), {
         displayName: merged.displayName,
+        firstName: merged.firstName,
+        lastName: merged.lastName,
         phoneNumber: merged.phoneNumber,
+        dateOfBirth: merged.dateOfBirth,
+        idNumber: merged.idNumber,
+        patientAge: merged.patientAge,
         location: merged.location,
         bio: merged.bio,
+        primaryFacility: merged.primaryFacility,
+        primaryFacilityId: merged.primaryFacilityId,
         updatedAt: merged.updatedAt,
       }, { merge: true });
 
@@ -178,6 +207,8 @@ export const UserProfileService = {
   },
 
   // ── Onboarding flag ──────────────────────────────────────────────────────
+  _onboardingListeners: [],
+
   async isOnboardingDone() {
     const uid = auth.currentUser?.uid;
     if (!uid) return true;
@@ -191,6 +222,16 @@ export const UserProfileService = {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     await AsyncStorage.setItem(KEYS.ONBOARDING_DONE(uid), 'true');
+    this._onboardingListeners.forEach((fn) => {
+      try { fn(true); } catch { /* ignore */ }
+    });
+  },
+
+  subscribeOnboarding(listener) {
+    this._onboardingListeners.push(listener);
+    return () => {
+      this._onboardingListeners = this._onboardingListeners.filter((fn) => fn !== listener);
+    };
   },
 
   // ── App settings (local only) ─────────────────────────────────────────────

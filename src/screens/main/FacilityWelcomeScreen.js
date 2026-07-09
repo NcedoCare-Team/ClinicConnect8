@@ -1,19 +1,16 @@
-// src/screens/main/FacilityWelcomeScreen.js
-// NcedoCare — Welcome to selected facility + patient intake form.
-// Collects name, surname, and age for this session, saves to Firestore,
-// then routes to the Assessment (symptom checker) tab.
+// Confirm selected facility — then go to Assessment or return to Home.
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
-  Platform, StatusBar, ScrollView, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Keyboard,
+  View, Text, StyleSheet, TouchableOpacity,
+  Platform, StatusBar, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
-import { SessionService } from '../../services/SessionService';
+import { UserProfileService } from '../../services/UserProfileService';
+import { useFacility } from '../../contexts/FacilityContext';
 
 const TYPE_ICON = {
   hospital: 'business',
@@ -30,100 +27,99 @@ const TYPE_COLOR = {
 };
 
 export default function FacilityWelcomeScreen({ navigation, route }) {
-  const { facility, userLocation } = route.params || {};
+  const { facility } = route.params || {};
+  const { setFacilitySession } = useFacility();
 
-  const facilityName     = facility?.name     || 'Healthcare Facility';
-  const facilityType     = facility?.type     || 'clinic';
-  const facilityAddress  = facility?.address  || 'South Africa';
+  const facilityName      = facility?.name     || 'Healthcare Facility';
+  const facilityType      = facility?.type     || 'clinic';
+  const facilityAddress   = facility?.address  || 'South Africa';
   const facilityOwnership = facility?.ownership || 'public';
 
   const headerGradient = TYPE_COLOR[facilityType] || TYPE_COLOR.clinic;
   const headerIcon     = TYPE_ICON[facilityType]  || 'business';
 
-  const [firstName, setFirstName] = useState('');
-  const [surname,   setSurname]   = useState('');
-  const [age,       setAge]       = useState('');
-  const [saving,    setSaving]    = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [saving, setSaving]   = useState(false);
 
-  const surnameRef = useRef(null);
-  const ageRef     = useRef(null);
+  useEffect(() => {
+    (async () => {
+      const p = await UserProfileService.getProfile();
+      setProfile(p);
+    })();
+  }, []);
 
-  const validate = () => {
-    if (!firstName.trim()) { Alert.alert('First name required', 'Please enter your first name.'); return false; }
-    if (!surname.trim())   { Alert.alert('Surname required', 'Please enter your surname.'); return false; }
-    const ageNum = parseInt(age, 10);
-    if (!age.trim() || isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
-      Alert.alert('Valid age required', 'Please enter a valid age between 1 and 120.');
-      return false;
-    }
-    return true;
-  };
+  const firstName = profile?.firstName || profile?.displayName?.split(' ')[0] || '';
+  const lastName  = profile?.lastName  || profile?.displayName?.split(' ').slice(1).join(' ') || '';
+  const displayName = profile?.displayName || `${firstName} ${lastName}`.trim();
+  const age = profile?.patientAge;
+  const idNumber = profile?.idNumber || '';
 
-  const handleStart = async () => {
-    if (!validate()) return;
-    Keyboard.dismiss();
+  const saveFacility = async (nextTab) => {
     setSaving(true);
+    try {
+      const sessionData = {
+        facilityId:       facility?.id   || '',
+        facilityName,
+        facilityType,
+        facilityAddress,
+        facilityOwnership,
+        facilityLat:      facility?.lat  || null,
+        facilityLng:      facility?.lng  || null,
+        patientFirstName: firstName,
+        patientSurname:   lastName,
+        patientAge:       age ?? null,
+        patientIdNumber:  idNumber,
+        sessionStartedAt: new Date().toISOString(),
+        ...(nextTab === 'assessment' ? { pendingMainTab: 'assessment' } : {}),
+      };
 
-    const sessionData = {
-      facilityId:      facility?.id   || '',
-      facilityName,
-      facilityType,
-      facilityAddress,
-      facilityOwnership,
-      facilityLat:     facility?.lat  || null,
-      facilityLng:     facility?.lng  || null,
-      patientFirstName: firstName.trim(),
-      patientSurname:   surname.trim(),
-      patientAge:       parseInt(age, 10),
-      sessionStartedAt: new Date().toISOString(),
-    };
+      await setFacilitySession(sessionData);
+      await UserProfileService.saveProfile({
+        primaryFacility: facilityName,
+        primaryFacilityId: facility?.id || '',
+        location: facilityAddress,
+      });
 
-    // Session stored in-memory only — clears on app restart (by design)
-    SessionService.setSession(sessionData);
-
-    setSaving(false);
-
-    // Navigate to Main and switch directly to Assessment tab
-    navigation.navigate('Main', { tab: 'assessment' });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main', params: nextTab === 'assessment' ? { tab: 'assessment' } : { tab: 'home' } }],
+      });
+    } catch (err) {
+      console.log('Facility save error:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={styles.root}>
       <StatusBar barStyle="light-content" translucent />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
 
-        {/* Gradient hero header */}
         <LinearGradient
           colors={headerGradient}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={styles.hero}>
 
-          {/* Back */}
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
 
-          {/* Decorative circles */}
           <View style={styles.deco1} />
           <View style={styles.deco2} />
 
-          {/* Facility icon */}
           <View style={styles.facilityIconWrap}>
             <View style={styles.facilityIconRing}>
               <Ionicons name={headerIcon} size={38} color="#FFFFFF" />
             </View>
           </View>
 
-          <Text style={styles.welcomeText}>Welcome to</Text>
+          <Text style={styles.welcomeText}>Connected facility</Text>
           <Text style={styles.facilityName} numberOfLines={2}>{facilityName}</Text>
 
-          {/* Address + ownership row */}
           <View style={styles.heroMetaRow}>
             <View style={styles.heroBadge}>
               <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.9)" />
@@ -140,104 +136,75 @@ export default function FacilityWelcomeScreen({ navigation, route }) {
           </View>
         </LinearGradient>
 
-        {/* Form card */}
         <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Tell us about yourself</Text>
+          <Text style={styles.formTitle}>Facility linked</Text>
           <Text style={styles.formSub}>
-            This helps your healthcare team identify you quickly. Your information is kept private.
+            Your profile will be shared securely with {facilityName} for care and identification.
           </Text>
 
-          {/* First name */}
-          <Text style={styles.label}>First Name</Text>
-          <View style={styles.inputWrap}>
-            <Ionicons name="person-outline" size={18} color={COLORS.textSecondary} />
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Thabo"
-              placeholderTextColor={COLORS.textTertiary}
-              value={firstName}
-              onChangeText={setFirstName}
-              autoCapitalize="words"
-              returnKeyType="next"
-              onSubmitEditing={() => surnameRef.current?.focus()}
-            />
+          <View style={styles.identityCard}>
+            <View style={styles.identityRow}>
+              <Ionicons name="person-outline" size={18} color={COLORS.primary} />
+              <View style={styles.identityBody}>
+                <Text style={styles.identityLabel}>Patient</Text>
+                <Text style={styles.identityValue}>
+                  {displayName || auth.currentUser?.email}
+                  {age != null ? ` · ${age} yrs` : ''}
+                </Text>
+              </View>
+            </View>
+            {idNumber ? (
+              <View style={styles.identityRow}>
+                <Ionicons name="card-outline" size={18} color={COLORS.primary} />
+                <View style={styles.identityBody}>
+                  <Text style={styles.identityLabel}>ID / Passport</Text>
+                  <Text style={styles.identityValue}>{idNumber}</Text>
+                </View>
+              </View>
+            ) : null}
           </View>
 
-          {/* Surname */}
-          <Text style={styles.label}>Surname</Text>
-          <View style={styles.inputWrap}>
-            <Ionicons name="person-outline" size={18} color={COLORS.textSecondary} />
-            <TextInput
-              ref={surnameRef}
-              style={styles.input}
-              placeholder="e.g. Nkosi"
-              placeholderTextColor={COLORS.textTertiary}
-              value={surname}
-              onChangeText={setSurname}
-              autoCapitalize="words"
-              returnKeyType="next"
-              onSubmitEditing={() => ageRef.current?.focus()}
-            />
-          </View>
-
-          {/* Age */}
-          <Text style={styles.label}>Age</Text>
-          <View style={styles.inputWrap}>
-            <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} />
-            <TextInput
-              ref={ageRef}
-              style={styles.input}
-              placeholder="e.g. 34"
-              placeholderTextColor={COLORS.textTertiary}
-              value={age}
-              onChangeText={t => setAge(t.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-              returnKeyType="done"
-              maxLength={3}
-              onSubmitEditing={handleStart}
-            />
-          </View>
-
-          {/* Privacy note */}
           <View style={styles.privacyRow}>
             <Ionicons name="lock-closed-outline" size={13} color={COLORS.primary} />
             <Text style={styles.privacyText}>
-              Your details are encrypted and only visible to the healthcare staff at {facilityName}.
+              Your data is end-to-end encrypted and delivered only to {facilityName}. No other party can access your information.
             </Text>
           </View>
 
-          {/* CTA button */}
           <TouchableOpacity
-            style={[styles.startBtn, saving && styles.startBtnDisabled]}
-            onPress={handleStart}
+            style={[styles.primaryBtn, saving && styles.btnDisabled]}
+            onPress={() => saveFacility('assessment')}
             disabled={saving}
             activeOpacity={0.87}>
             <LinearGradient
               colors={headerGradient}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={styles.startBtnGrad}>
+              style={styles.btnGrad}>
               {saving
                 ? <ActivityIndicator color="#FFFFFF" />
                 : (
                   <>
                     <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-                    <Text style={styles.startBtnText}>Start My Care Journey</Text>
-                    <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                    <Text style={styles.primaryBtnText}>Start assessment</Text>
                   </>
                 )
               }
             </LinearGradient>
           </TouchableOpacity>
 
-          <Text style={styles.sessionNote}>
-            Your session at {facilityName} begins when you tap the button above.
-            To use a different facility, simply close and reopen the app.
-          </Text>
+          <TouchableOpacity
+            style={[styles.secondaryBtn, saving && styles.btnDisabled]}
+            onPress={() => saveFacility('home')}
+            disabled={saving}
+            activeOpacity={0.87}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={COLORS.primary} />
+            <Text style={styles.secondaryBtnText}>Done — back to My Care</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={{ height: 48 }} />
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -245,7 +212,6 @@ const styles = StyleSheet.create({
   root:          { flex: 1, backgroundColor: COLORS.backgroundSecondary },
   scrollContent: { flexGrow: 1 },
 
-  // Hero
   hero: {
     paddingTop: Platform.OS === 'ios' ? 58 : (StatusBar.currentHeight || 0) + 20,
     paddingBottom: 36,
@@ -294,7 +260,6 @@ const styles = StyleSheet.create({
   },
   heroBadgeText: { fontSize: 11, color: 'rgba(255,255,255,0.92)', fontWeight: '600' },
 
-  // Form card
   formCard: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
@@ -305,36 +270,37 @@ const styles = StyleSheet.create({
     }),
   },
   formTitle: { fontSize: 20, fontWeight: '900', color: COLORS.textPrimary, marginBottom: 6 },
-  formSub:   { fontSize: 13, color: COLORS.textSecondary, lineHeight: 20, marginBottom: 24 },
+  formSub:   { fontSize: 13, color: COLORS.textSecondary, lineHeight: 20, marginBottom: 20 },
 
-  label: { fontSize: 13, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 },
-  inputWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+  identityCard: {
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: 14, borderWidth: 1.5, borderColor: COLORS.border,
-    paddingHorizontal: 14, height: 52, marginBottom: 16,
+    borderRadius: 16, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: COLORS.borderLight, gap: 14,
   },
-  input: { flex: 1, fontSize: 15, color: COLORS.textPrimary },
+  identityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  identityBody: { flex: 1 },
+  identityLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
+  identityValue: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
 
-  // Privacy
   privacyRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
     backgroundColor: COLORS.primaryVeryLight, borderRadius: 12,
-    padding: 12, marginBottom: 24,
+    padding: 12, marginBottom: 20,
   },
   privacyText: { flex: 1, fontSize: 11, color: COLORS.primary, fontWeight: '500', lineHeight: 17 },
 
-  // CTA
-  startBtn:         { borderRadius: 18, overflow: 'hidden', marginBottom: 16 },
-  startBtnDisabled: { opacity: 0.6 },
-  startBtnGrad: {
+  primaryBtn:   { borderRadius: 18, overflow: 'hidden', marginBottom: 12 },
+  btnDisabled:  { opacity: 0.6 },
+  btnGrad: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 18, gap: 10,
   },
-  startBtnText: { fontSize: 17, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.3 },
+  primaryBtnText: { fontSize: 16, fontWeight: '900', color: '#FFFFFF' },
 
-  sessionNote: {
-    fontSize: 11, color: COLORS.textTertiary, textAlign: 'center',
-    lineHeight: 17, paddingHorizontal: 8,
+  secondaryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 16, borderRadius: 18,
+    borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: '#FFFFFF',
   },
+  secondaryBtnText: { fontSize: 15, fontWeight: '800', color: COLORS.primary },
 });

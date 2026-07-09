@@ -1,6 +1,4 @@
-// src/screens/main/OnboardingScreen.js
-// NcedoCare patient health profile — collected once after first login.
-// Captures: language preference, chronic conditions, allergies, medications.
+// First-login profile — name, ID, date of birth. Then opens the app dashboard.
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -10,33 +8,18 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { updateProfile } from 'firebase/auth';
 import { auth } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
+import DateOfBirthPicker, { ageFromDateParts, formatDob } from '../../components/DateOfBirthPicker';
 
-const LANGUAGES = [
-  { code: 'en', label: 'English' },
-  { code: 'zu', label: 'isiZulu' },
-  { code: 'xh', label: 'isiXhosa' },
-  { code: 'af', label: 'Afrikaans' },
-  { code: 'st', label: 'Sesotho' },
-];
-
-const COMMON_CONDITIONS = [
-  'Hypertension', 'Diabetes', 'Asthma', 'HIV/AIDS',
-  'Heart Disease', 'Epilepsy', 'Arthritis', 'TB',
-];
-
-export default function OnboardingScreen({ navigation }) {
-  const displayName = auth.currentUser?.displayName || 'there';
-  const firstName   = displayName.split(' ')[0];
-
-  const [language,    setLanguage]    = useState('en');
-  const [conditions,  setConditions]  = useState([]);   // selected from chips
-  const [customCond,  setCustomCond]  = useState('');   // freetext additional
-  const [allergies,   setAllergies]   = useState('');
-  const [medications, setMedications] = useState('');
-  const [saving,      setSaving]      = useState(false);
+export default function OnboardingScreen() {
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
+  const [idNumber,  setIdNumber]  = useState('');
+  const [dob, setDob] = useState({ year: 1990, month: 1, day: 1 });
+  const [saving, setSaving] = useState(false);
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -48,39 +31,38 @@ export default function OnboardingScreen({ navigation }) {
     ]).start();
   }, []);
 
-  const toggleCondition = (cond) => {
-    setConditions(prev =>
-      prev.includes(cond) ? prev.filter(c => c !== cond) : [...prev, cond]
-    );
-  };
-
   const handleComplete = async () => {
+    if (!firstName.trim()) return Alert.alert('Required', 'Please enter your first name.');
+    if (!lastName.trim())  return Alert.alert('Required', 'Please enter your last name.');
+    if (!idNumber.trim())  return Alert.alert('Required', 'Please enter your ID or passport number.');
+
+    const age = ageFromDateParts(dob);
+    if (age === null) return Alert.alert('Required', 'Please select a valid date of birth.');
+
     setSaving(true);
     try {
-      const allConditions = [
-        ...conditions,
-        ...customCond.split(',').map(s => s.trim()).filter(Boolean),
-      ];
+      const displayName = `${firstName.trim()} ${lastName.trim()}`;
+      const dateOfBirth = formatDob(dob);
+
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, { displayName });
+      }
+
       await UserProfileService.saveProfile({
         displayName,
-        language,
-        chronicConditions: allConditions,
-        allergies: allergies.trim(),
-        currentMedications: medications.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        idNumber: idNumber.trim(),
+        dateOfBirth,
+        patientAge: age,
       });
       await UserProfileService.setOnboardingDone();
-      navigation.replace('Main');
     } catch (err) {
       console.log('Onboarding save error:', err);
       Alert.alert('Error', 'Could not save your profile. Please try again.');
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleSkip = async () => {
-    await UserProfileService.setOnboardingDone();
-    navigation.replace('Main');
   };
 
   return (
@@ -95,111 +77,80 @@ export default function OnboardingScreen({ navigation }) {
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
 
-            {/* Welcome */}
             <View style={s.welcomeSection}>
               <View style={s.iconWrap}>
                 <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={s.iconGradient}>
-                  <Ionicons name="heart-outline" size={28} color="#FFFFFF" />
+                  <Ionicons name="shield-checkmark-outline" size={28} color="#FFFFFF" />
                 </LinearGradient>
               </View>
-              <Text style={s.welcomeTitle}>Welcome, {firstName}!</Text>
+              <Text style={s.welcomeTitle}>Complete your profile</Text>
               <Text style={s.welcomeSub}>
-                Help us keep you safe by sharing a few health details. This information is encrypted and only seen by your healthcare team.
+                These details identify you at your healthcare facility. They are encrypted and accessible only to your chosen facility.
               </Text>
             </View>
 
-            {/* Language */}
             <View style={s.card}>
-              <View style={s.sectionHeader}>
-                <Ionicons name="language-outline" size={18} color={COLORS.primary} />
-                <Text style={s.sectionTitle}>Preferred Language</Text>
+              <Text style={s.label}>First Name</Text>
+              <View style={s.inputWrap}>
+                <Ionicons name="person-outline" size={18} color={COLORS.textSecondary} />
+                <TextInput
+                  style={s.input}
+                  placeholder="First name"
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  autoCapitalize="words"
+                />
               </View>
-              <View style={s.chipsRow}>
-                {LANGUAGES.map(l => (
-                  <TouchableOpacity
-                    key={l.code}
-                    style={[s.chip, language === l.code && s.chipActive]}
-                    onPress={() => setLanguage(l.code)}>
-                    <Text style={[s.chipText, language === l.code && s.chipTextActive]}>{l.label}</Text>
-                  </TouchableOpacity>
-                ))}
+
+              <Text style={s.label}>Last Name</Text>
+              <View style={s.inputWrap}>
+                <Ionicons name="person-outline" size={18} color={COLORS.textSecondary} />
+                <TextInput
+                  style={s.input}
+                  placeholder="Last name"
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  autoCapitalize="words"
+                />
               </View>
+
+              <Text style={s.label}>ID / Passport Number</Text>
+              <View style={s.inputWrap}>
+                <Ionicons name="card-outline" size={18} color={COLORS.textSecondary} />
+                <TextInput
+                  style={s.input}
+                  placeholder="National ID or passport"
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={idNumber}
+                  onChangeText={setIdNumber}
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              <Text style={s.label}>Date of Birth</Text>
+              <DateOfBirthPicker value={dob} onChange={setDob} />
             </View>
 
-            {/* Chronic conditions */}
-            <View style={s.card}>
-              <View style={s.sectionHeader}>
-                <Ionicons name="pulse-outline" size={18} color={COLORS.primary} />
-                <Text style={s.sectionTitle}>Chronic Conditions</Text>
-              </View>
-              <Text style={s.sectionSub}>Select all that apply</Text>
-              <View style={s.chipsRow}>
-                {COMMON_CONDITIONS.map(cond => (
-                  <TouchableOpacity
-                    key={cond}
-                    style={[s.chip, conditions.includes(cond) && s.chipActive]}
-                    onPress={() => toggleCondition(cond)}>
-                    {conditions.includes(cond) && (
-                      <Ionicons name="checkmark" size={12} color={COLORS.primary} />
-                    )}
-                    <Text style={[s.chipText, conditions.includes(cond) && s.chipTextActive]}>{cond}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TextInput
-                style={s.input}
-                placeholder="Other conditions, comma separated..."
-                placeholderTextColor={COLORS.textTertiary}
-                value={customCond}
-                onChangeText={setCustomCond}
-              />
+            <View style={s.securityNote}>
+              <Ionicons name="lock-closed" size={16} color={COLORS.primary} />
+              <Text style={s.securityText}>
+                Your name, ID, and date of birth are stored securely and transmitted end-to-end to your selected healthcare facility only. No third party can access your data.
+              </Text>
             </View>
 
-            {/* Allergies */}
-            <View style={s.card}>
-              <View style={s.sectionHeader}>
-                <Ionicons name="warning-outline" size={18} color={COLORS.primary} />
-                <Text style={s.sectionTitle}>Allergies</Text>
-              </View>
-              <TextInput
-                style={s.input}
-                placeholder="e.g. Penicillin, Peanuts, Latex..."
-                placeholderTextColor={COLORS.textTertiary}
-                value={allergies}
-                onChangeText={setAllergies}
-              />
-            </View>
-
-            {/* Current medications */}
-            <View style={s.card}>
-              <View style={s.sectionHeader}>
-                <Ionicons name="medkit-outline" size={18} color={COLORS.primary} />
-                <Text style={s.sectionTitle}>Current Medications</Text>
-              </View>
-              <TextInput
-                style={[s.input, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="e.g. Metformin 500mg, Amlodipine 5mg..."
-                placeholderTextColor={COLORS.textTertiary}
-                value={medications}
-                onChangeText={setMedications}
-                multiline
-              />
-            </View>
-
-            {/* Continue */}
             <TouchableOpacity
               style={s.continueBtn}
               onPress={handleComplete}
               disabled={saving}
               activeOpacity={0.85}>
               <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={s.continueBtnGradient}>
-                <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                <Text style={s.continueBtnText}>{saving ? 'Saving...' : 'Complete Setup'}</Text>
+                <Ionicons name="arrow-forward-circle" size={20} color="#FFFFFF" />
+                <Text style={s.continueBtnText}>
+                  {saving ? 'Saving...' : 'Continue to dashboard'}
+                </Text>
               </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={s.skipBtn} onPress={handleSkip}>
-              <Text style={s.skipText}>Skip for now</Text>
             </TouchableOpacity>
 
             <View style={{ height: 60 }} />
@@ -218,7 +169,7 @@ const s = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 70 : (StatusBar.currentHeight || 0) + 30,
   },
 
-  welcomeSection: { alignItems: 'center', marginBottom: 28 },
+  welcomeSection: { alignItems: 'center', marginBottom: 24 },
   iconWrap:       { marginBottom: 16 },
   iconGradient: {
     width: 64, height: 64, borderRadius: 20,
@@ -238,35 +189,30 @@ const s = StyleSheet.create({
       android: { elevation: 2 },
     }),
   },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  sectionTitle:  { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
-  sectionSub:    { fontSize: 12, color: COLORS.textSecondary, marginBottom: 10, marginTop: -6 },
-
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 20, backgroundColor: COLORS.backgroundSecondary,
-    borderWidth: 1.5, borderColor: COLORS.border,
+  label: {
+    fontSize: 13, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8, marginTop: 4,
   },
-  chipActive:    { backgroundColor: COLORS.primaryVeryLight, borderColor: COLORS.primary },
-  chipText:      { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
-  chipTextActive:{ color: COLORS.primary },
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: 12, borderWidth: 1.5, borderColor: COLORS.border,
+    paddingHorizontal: 14, height: 52, marginBottom: 14,
+  },
+  input: { flex: 1, fontSize: 15, color: COLORS.textPrimary },
 
-  input: {
-    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 12 : 10,
-    fontSize: 14, color: COLORS.textPrimary,
-    backgroundColor: COLORS.backgroundSecondary, marginTop: 6,
+  securityNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: COLORS.primaryVeryLight, borderRadius: 14,
+    padding: 14, marginBottom: 20,
+  },
+  securityText: {
+    flex: 1, fontSize: 12, color: COLORS.primary, fontWeight: '500', lineHeight: 18,
   },
 
-  continueBtn:         { borderRadius: 16, overflow: 'hidden', marginTop: 8 },
+  continueBtn:         { borderRadius: 16, overflow: 'hidden' },
   continueBtnGradient: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 16, gap: 8,
   },
   continueBtnText: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-
-  skipBtn:  { alignItems: 'center', paddingVertical: 16 },
-  skipText: { fontSize: 14, fontWeight: '600', color: COLORS.textTertiary },
 });
