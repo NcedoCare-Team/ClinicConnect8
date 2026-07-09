@@ -78,6 +78,7 @@ export default function FacilityWelcomeScreen({ navigation, route }) {
       await UserProfileService.saveProfile({
         primaryFacility: facilityName,
         primaryFacilityId: facility?.id || '',
+        facilityId: facility?.id || '',
         location: facilityAddress,
       });
 

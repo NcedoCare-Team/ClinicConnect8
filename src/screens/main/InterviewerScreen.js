@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
+import { COLLECTIONS } from '../../services/firestorePaths';
 
 const PRIORITY_CONFIG = {
   CRITICAL: { color: COLORS.critical, bg: COLORS.criticalLight, icon: 'alert-circle',    label: 'CRITICAL', order: 0 },
@@ -52,7 +53,7 @@ export default function InterviewerScreen({ navigation }) {
   // Real-time listener for queued/in_review cases
   useEffect(() => {
     const q = query(
-      collection(firestore, 'triage_cases'),
+      collection(firestore, COLLECTIONS.TRIAGE_CASES),
       where('status', 'in', ['queued', 'in_review']),
       orderBy('createdAt', 'asc')
     );
@@ -90,7 +91,7 @@ export default function InterviewerScreen({ navigation }) {
 
     setSaving(true);
     try {
-      const caseRef = doc(firestore, 'triage_cases', selected.id);
+      const caseRef = doc(firestore, COLLECTIONS.TRIAGE_CASES, selected.id);
       const finalPriority = decision === 'ESCALATE' ? 'CRITICAL'
                           : decision === 'ADJUST'   ? (adjustedPriority || selected.priority)
                           : selected.priority;

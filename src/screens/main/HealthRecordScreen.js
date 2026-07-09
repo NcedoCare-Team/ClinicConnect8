@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
+import { COLLECTIONS } from '../../services/firestorePaths';
 import { ScreenHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 import { SessionService } from '../../services/SessionService';
 import { UserProfileService } from '../../services/UserProfileService';
@@ -84,7 +85,7 @@ export default function HealthRecordScreen() {
     if (!uid) { setLoading(false); return; }
     try {
       const q    = query(
-        collection(firestore, 'triage_cases'),
+        collection(firestore, COLLECTIONS.TRIAGE_CASES),
         where('patientId', '==', uid),
         orderBy('createdAt', 'desc'),
       );

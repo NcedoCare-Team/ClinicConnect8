@@ -6,6 +6,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
     }
 
+    function patientDoc() {
+      return get(/databases/$(database)/documents/patients/$(request.auth.uid)).data;
+    }
+
     function sameFacility(facilityId) {
       return request.auth != null && staffDoc().facilityId == facilityId;
     }
@@ -34,25 +38,22 @@ service cloud.firestore {
       allow create: if sameFacility(request.resource.data.facilityId);
     }
 
-    // Triage cases: any authenticated user can create; staff can read/update
     match /triageCases/{caseId} {
       allow create: if request.auth != null;
-      allow read, update: if request.auth != null &&
-        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role
-        in ['nurse', 'doctor', 'admin'];
+      allow read, update: if request.auth != null && (
+        resource.data.patientId == request.auth.uid ||
+        patientDoc().role in ['nurse', 'doctor', 'admin']
+      );
     }
 
-    // Facility queues: authenticated read only, writes via Cloud Functions
     match /facilityQueues/{facilityId}/activeQueue/{caseId} {
       allow read: if request.auth != null;
       allow write: if false;
     }
 
-    // Blockchain events: doctors/admins can read, writes via Cloud Functions only
     match /blockchainEvents/{eventId} {
       allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/patients/$(request.auth.uid)).data.role
-        in ['doctor', 'admin'];
+        patientDoc().role in ['doctor', 'admin'];
       allow write: if false;
     }
   }

@@ -1,8 +1,8 @@
-// Native date picker field — tap to open standard iOS/Android date modal.
+// Native date picker — centered modal (not stuck at bottom).
 
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Platform, Modal,
+  View, Text, TouchableOpacity, StyleSheet, Platform, Modal, Pressable,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -64,9 +64,9 @@ export default function DateOfBirthField({ value, onChange }) {
       </TouchableOpacity>
 
       {Platform.OS === 'ios' ? (
-        <Modal visible={showPicker} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalSheet}>
+        <Modal visible={showPicker} transparent animationType="fade">
+          <Pressable style={styles.modalOverlay} onPress={() => setShowPicker(false)}>
+            <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHeader}>
                 <TouchableOpacity onPress={() => setShowPicker(false)}>
                   <Text style={styles.modalCancel}>Cancel</Text>
@@ -84,9 +84,10 @@ export default function DateOfBirthField({ value, onChange }) {
                 minimumDate={new Date(1900, 0, 1)}
                 onChange={onPickerChange}
                 themeVariant="light"
+                style={styles.picker}
               />
-            </View>
-          </View>
+            </Pressable>
+          </Pressable>
         </Modal>
       ) : showPicker ? (
         <DateTimePicker
@@ -123,14 +124,27 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15,23,42,0.45)',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 100 : 72,
+    paddingHorizontal: 28,
+    backgroundColor: 'rgba(15,23,42,0.50)',
   },
-  modalSheet: {
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 0,
+    borderRadius: 20,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.18,
+        shadowRadius: 24,
+      },
+      android: { elevation: 12 },
+    }),
   },
   modalHeader: {
     flexDirection: 'row',
@@ -155,5 +169,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.primary,
     fontWeight: '800',
+  },
+  picker: {
+    height: 200,
+    width: '100%',
   },
 });

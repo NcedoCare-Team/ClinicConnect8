@@ -10,9 +10,10 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { setDoc, getDoc } from 'firebase/firestore';
 import { StorageService } from '../../utils/storage';
 import { COLORS } from '../../constants/colors';
+import { patientRef } from '../../services/firestorePaths';
 
 export default function LoginScreen() {
   const [isLogin, setIsLogin]               = useState(true);
@@ -23,21 +24,21 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword]     = useState(false);
   const [showConfirm, setShowConfirm]       = useState(false);
 
-  const createUserDocument = async (user) => {
+  const createPatientDocument = async (user) => {
     if (!user) return;
-    const userRef  = doc(firestore, 'users', user.uid);
-    const snapshot = await getDoc(userRef);
+    const patientDoc = patientRef(firestore, user.uid);
+    const snapshot = await getDoc(patientDoc);
     const now      = new Date();
 
     if (!snapshot.exists()) {
-      await setDoc(userRef, {
+      await setDoc(patientDoc, {
         email: user.email,
         role: 'patient',
         createdAt: now,
         lastLogin: now,
       });
     } else {
-      await setDoc(userRef, { lastLogin: now }, { merge: true });
+      await setDoc(patientDoc, { lastLogin: now }, { merge: true });
     }
   };
 
@@ -51,7 +52,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email, password);
-      await createUserDocument(user);
+      await createPatientDocument(user);
       await StorageService.saveUserSession(user.uid, user.email);
     } catch (error) {
       const msgs = {
@@ -71,7 +72,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const { user } = await signInWithEmailAndPassword(auth, email, password);
-      await createUserDocument(user);
+      await createPatientDocument(user);
       await StorageService.saveUserSession(user.uid, user.email);
     } catch {
       Alert.alert('Error', 'Invalid email or password. Please try again.');

@@ -13,6 +13,7 @@ import {
   doc, onSnapshot,
 } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
+import { COLLECTIONS } from '../../services/firestorePaths';
 import { COLORS } from '../../constants/colors';
 
 const PRIORITY_CONFIG = {
@@ -39,7 +40,7 @@ export default function JobTrendsScreen({ navigation }) {
   // Real-time listener for active case
   useEffect(() => {
     if (!uid) return;
-    const casesRef = collection(firestore, 'triage_cases');
+    const casesRef = collection(firestore, COLLECTIONS.TRIAGE_CASES);
     const q = query(
       casesRef,
       where('patientId', '==', uid),
@@ -63,7 +64,7 @@ export default function JobTrendsScreen({ navigation }) {
     if (!uid) return;
     try {
       const q = query(
-        collection(firestore, 'triage_cases'),
+        collection(firestore, COLLECTIONS.TRIAGE_CASES),
         where('patientId', '==', uid),
         where('status', '==', 'completed'),
         orderBy('completedAt', 'desc')

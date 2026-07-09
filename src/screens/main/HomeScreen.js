@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { collection, query, where, orderBy, limit, getDocs, onSnapshot, doc } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
+import { COLLECTIONS, patientRef } from '../../services/firestorePaths';
 import { HOME_INSIGHT_PREVIEW } from '../../constants/communityInsights';
 import { UserProfileService } from '../../services/UserProfileService';
 import { HomeHeader, LAYOUT } from '../../components/layout/ScreenHeader';
@@ -44,7 +45,7 @@ export default function HomeScreen({ navigation }) {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     const unsub = onSnapshot(
-      doc(firestore, 'users', uid),
+      patientRef(firestore, uid),
       snap => { if (snap.exists()) setHealthData(snap.data().healthData || null); },
       () => { /* permission denied — stress/BP tiles show — */ }
     );
@@ -79,7 +80,7 @@ export default function HomeScreen({ navigation }) {
 
     if (uid) {
       try {
-        const casesRef = collection(firestore, 'triage_cases');
+        const casesRef = collection(firestore, COLLECTIONS.TRIAGE_CASES);
         const snap = await getDocs(query(
           casesRef,
           where('patientId', '==', uid),
