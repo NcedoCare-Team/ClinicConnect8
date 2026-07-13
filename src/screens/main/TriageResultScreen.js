@@ -59,7 +59,17 @@ const PRIORITY_CONFIG = {
 };
 
 export default function TriageResultScreen({ navigation, route }) {
-  const { priority = 'LOW', riskScore, reasoning, symptoms, caseId } = route.params || {};
+  const {
+    priority = 'LOW',
+    riskScore,
+    confidence,
+    reasoning,
+    riskIndicators,
+    recommendedAction,
+    estimatedWait,
+    symptoms,
+    caseId,
+  } = route.params || {};
   const cfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.LOW;
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -136,6 +146,54 @@ export default function TriageResultScreen({ navigation, route }) {
                 <Text style={styles.cardTitle}>Why this priority?</Text>
               </View>
               <Text style={styles.reasoningText}>{reasoning}</Text>
+            </View>
+          ) : null}
+
+          {/* Recommended action */}
+          {recommendedAction ? (
+            <View style={[styles.card, styles.actionCard]}>
+              <View style={styles.cardTitleRow}>
+                <Ionicons name="medkit-outline" size={18} color={cfg.color} />
+                <Text style={styles.cardTitle}>Recommended Action</Text>
+              </View>
+              <Text style={[styles.reasoningText, { color: COLORS.textPrimary, fontWeight: '600' }]}>
+                {recommendedAction}
+              </Text>
+              {estimatedWait ? (
+                <View style={styles.waitRow}>
+                  <Ionicons name="time-outline" size={14} color={COLORS.textTertiary} />
+                  <Text style={styles.waitText}>Estimated wait: {estimatedWait}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Risk indicators */}
+          {riskIndicators?.length > 0 ? (
+            <View style={styles.card}>
+              <View style={styles.cardTitleRow}>
+                <Ionicons name="warning-outline" size={18} color={cfg.color} />
+                <Text style={styles.cardTitle}>Risk Indicators</Text>
+              </View>
+              {riskIndicators.map((indicator, i) => (
+                <View key={i} style={styles.indicatorRow}>
+                  <View style={[styles.indicatorDot, { backgroundColor: cfg.color }]} />
+                  <Text style={styles.indicatorText}>{indicator}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {/* Confidence */}
+          {confidence != null ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>AI Confidence</Text>
+              <View style={styles.gaugeRow}>
+                <View style={styles.gaugeTrack}>
+                  <View style={[styles.gaugeFill, { width: `${Math.round(confidence)}%`, backgroundColor: COLORS.primary }]} />
+                </View>
+                <Text style={[styles.gaugeValue, { color: COLORS.primary }]}>{Math.round(confidence)}%</Text>
+              </View>
             </View>
           ) : null}
 
@@ -235,9 +293,17 @@ const styles = StyleSheet.create({
   gaugeLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   gaugeLabelText: { fontSize: 11, color: COLORS.textTertiary, fontWeight: '500' },
 
-  // Reasoning
+  // Reasoning / action card
   reasoningText: { fontSize: 14, color: COLORS.textSecondary, lineHeight: 22 },
   symptomsText:  { fontSize: 13, color: COLORS.textSecondary, lineHeight: 20 },
+  actionCard: { borderLeftWidth: 3, borderLeftColor: COLORS.primary },
+  waitRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  waitText: { fontSize: 12, color: COLORS.textTertiary, fontWeight: '600' },
+
+  // Risk indicators
+  indicatorRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
+  indicatorDot:  { width: 7, height: 7, borderRadius: 3.5, marginTop: 5, flexShrink: 0 },
+  indicatorText: { flex: 1, fontSize: 13, color: COLORS.textSecondary, lineHeight: 20 },
 
   // Actions
   actionsSection: { gap: 12, marginBottom: 16 },

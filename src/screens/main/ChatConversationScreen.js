@@ -14,9 +14,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
+import { COLLECTIONS } from '../../services/firestorePaths';
 import ApiService from '../../services/ApiService';
 import { ChatStorageService } from '../../services/ChatStorageService';
+import { SessionService } from '../../services/SessionService';
 import MessageBubble from './components/MessageBubble';
 import ChatInput from './components/ChatInput';
 
@@ -26,6 +30,7 @@ export default function ChatConversationScreen({ route, navigation }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [triaging, setTriaging] = useState(false);
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [conversationTitle, setConversationTitle] = useState(initialTitle);
   
@@ -220,6 +225,82 @@ export default function ChatConversationScreen({ route, navigation }) {
     }
   };
 
+  const handleTriage = async () => {
+    const userMessages = messages.filter(m => m.sender === 'user' && m.text?.trim());
+    if (userMessages.length === 0) {
+      Alert.alert('No symptoms yet', 'Please describe your symptoms in the chat before requesting a triage assessment.');
+      return;
+    }
+
+    setTriaging(true);
+    try {
+      const symptomsText = userMessages.map(m => m.text.trim()).join('\n');
+
+      // Build patient context from active session
+      const session = SessionService.getSession();
+      const contextParts = [];
+      if (session?.patientFirstName) {
+        const name = [session.patientFirstName, session.patientSurname].filter(Boolean).join(' ');
+        contextParts.push(`Patient: ${name}`);
+      }
+      if (session?.patientAge) contextParts.push(`Age: ${session.patientAge}`);
+      if (session?.facilityName) contextParts.push(`Facility: ${session.facilityName}`);
+      const contextStr = contextParts.join('. ');
+
+      const result = await ApiService.submitTriage(symptomsText, contextStr);
+
+      if (!result.success || !result.data) {
+        Alert.alert('Triage Unavailable', result.message || 'Could not complete the triage assessment. Please try again.');
+        return;
+      }
+
+      const { priority, riskScore, confidence, reasoning, riskIndicators, recommendedAction, estimatedWait } = result.data;
+
+      // Persist triage case to Firestore
+      const uid = auth.currentUser?.uid;
+      let caseId = null;
+      if (uid) {
+        try {
+          const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
+            patientId: uid,
+            facilityId: session?.facilityId || '',
+            facilityName: session?.facilityName || '',
+            symptoms: symptomsText,
+            priority: priority || 'MEDIUM',
+            riskScore: riskScore ?? 50,
+            confidence: confidence ?? 50,
+            reasoning: reasoning || '',
+            riskIndicators: riskIndicators || [],
+            recommendedAction: recommendedAction || '',
+            estimatedWait: estimatedWait || '',
+            status: 'queued',
+            createdAt: serverTimestamp(),
+          });
+          caseId = ref.id;
+        } catch (err) {
+          console.log('[Triage] Firestore save error:', err.message);
+        }
+      }
+
+      navigation.navigate('TriageResult', {
+        priority: priority || 'MEDIUM',
+        riskScore,
+        confidence,
+        reasoning,
+        riskIndicators,
+        recommendedAction,
+        estimatedWait,
+        symptoms: symptomsText.slice(0, 400),
+        caseId,
+      });
+    } catch (err) {
+      console.error('[Triage] Unexpected error:', err);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setTriaging(false);
+    }
+  };
+
   const handleBack = async () => {
     await new Promise(resolve => setTimeout(resolve, 100));
     
@@ -390,20 +471,32 @@ export default function ChatConversationScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* Status Indicator */}
+            {/* Right: Triage CTA when conversation is active, status pill otherwise */}
             <View style={styles.statusSection}>
-              <View style={styles.statusPill}>
-                <View style={[
-                  styles.statusDot,
-                  typing && styles.statusDotThinking
-                ]} />
-                <Text style={[
-                  styles.statusText,
-                  typing && styles.statusTextThinking
-                ]}>
-                  {typing ? 'Thinking' : 'Online'}
-                </Text>
-              </View>
+              {messages.length > 0 ? (
+                <TouchableOpacity
+                  style={[styles.triageBtn, (triaging || typing) && styles.triageBtnBusy]}
+                  onPress={handleTriage}
+                  disabled={triaging || typing}
+                  activeOpacity={0.8}>
+                  {triaging
+                    ? <ActivityIndicator size="small" color="#FFFFFF" style={{ marginHorizontal: 4 }} />
+                    : (
+                      <>
+                        <Ionicons name="pulse" size={13} color="#FFFFFF" />
+                        <Text style={styles.triageBtnText}>Get Triage</Text>
+                      </>
+                    )
+                  }
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.statusPill}>
+                  <View style={[styles.statusDot, typing && styles.statusDotThinking]} />
+                  <Text style={[styles.statusText, typing && styles.statusTextThinking]}>
+                    {typing ? 'Thinking' : 'Online'}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </LinearGradient>
@@ -568,6 +661,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: -0.1,
   },
+
+  // Triage CTA button
+  triageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    ...Platform.select({
+      ios:     { shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.35, shadowRadius: 6 },
+      android: { elevation: 3 },
+    }),
+  },
+  triageBtnBusy: { opacity: 0.6 },
+  triageBtnText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
 
   // Status Section
   statusSection: {

@@ -1,12 +1,13 @@
 const API_CONFIG = {
   // BASE_URL: 'http://YOUR_LOCAL_IP:5000',   
 
-  BASE_URL: 'http://10.250.49.207:5000',    // <-- Replace with your IP like shown above
+  BASE_URL: 'http://192.168.68.105:5000',    // <-- Replace with your IP like shown above
   TIMEOUT: 90000,
 };
 
 const ENDPOINTS = {
   CHATBOT: '/api/chatbot',
+  TRIAGE: '/api/triage',
   CLEAR_SESSION: '/api/clear_session',
   HEALTH_CHECK: '/health',
 };
@@ -291,6 +292,35 @@ const ApiService = {
         statusCode: parsedError.statusCode,
         data: null,
       };
+    }
+  },
+
+  // Submit symptoms for structured AI triage — calls /api/triage, returns { priority, riskScore, ... }
+  submitTriage: async (symptoms, context = '') => {
+    try {
+      const response = await fetchWithTimeout(
+        buildUrl(ENDPOINTS.TRIAGE),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ symptoms, context }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || data.status === 'error') {
+        return {
+          success: false,
+          message: data.response || 'Triage request failed.',
+          data: null,
+        };
+      }
+
+      return { success: true, data: data.data };
+    } catch (error) {
+      const parsedError = parseError(error);
+      return { success: false, message: parsedError.message, data: null };
     }
   },
 
