@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { COLLECTIONS } from '../../services/firestorePaths';
@@ -30,13 +30,20 @@ export default function ChatConversationScreen({ route, navigation }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [typing, setTyping] = useState(false);
-  const [triaging, setTriaging] = useState(false);
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [conversationTitle, setConversationTitle] = useState(initialTitle);
-  
+  const [activeCaseId, setActiveCaseId] = useState(null);
+  const [caseStatus, setCaseStatus] = useState(null);
+
   const flatListRef = useRef(null);
   const slideAnim = useRef(new Animated.Value(100)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const contextSentRef = useRef(false);
+  const caseUnsubRef = useRef(null);
+  const completionHandledRef = useRef(false);
+
+  // Chat is locked from the moment a case is submitted until the facility completes it
+  const caseLocked = Boolean(activeCaseId) && caseStatus !== 'completed';
 
   useEffect(() => {
     loadMessages();
@@ -53,7 +60,88 @@ export default function ChatConversationScreen({ route, navigation }) {
     navigation.setOptions({
       headerShown: false,
     });
+
+    return () => {
+      if (caseUnsubRef.current) caseUnsubRef.current();
+    };
   }, []);
+
+  // Restore any active case tied to this conversation and watch its status
+  useEffect(() => {
+    (async () => {
+      if (!conversationId) return;
+      const conversation = await ChatStorageService.getConversation(conversationId);
+      if (conversation?.activeCaseId) {
+        setActiveCaseId(conversation.activeCaseId);
+        contextSentRef.current = true;
+      }
+    })();
+  }, [conversationId]);
+
+  // Live status of the submitted case — unlocks the chat when the facility completes it
+  useEffect(() => {
+    if (caseUnsubRef.current) {
+      caseUnsubRef.current();
+      caseUnsubRef.current = null;
+    }
+    if (!activeCaseId) {
+      setCaseStatus(null);
+      return;
+    }
+
+    const caseRef = doc(firestore, COLLECTIONS.TRIAGE_CASES, activeCaseId);
+    caseUnsubRef.current = onSnapshot(
+      caseRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setCaseStatus('completed');
+          return;
+        }
+        const status = snap.data().status || 'queued';
+        setCaseStatus(status);
+        if (status === 'completed') {
+          markCaseCompleted();
+        }
+      },
+      (err) => {
+        console.log('[Triage] case listener error:', err.message);
+        setCaseStatus('queued');
+      }
+    );
+
+    return () => {
+      if (caseUnsubRef.current) {
+        caseUnsubRef.current();
+        caseUnsubRef.current = null;
+      }
+    };
+  }, [activeCaseId]);
+
+  const markCaseCompleted = async () => {
+    if (!conversationId || completionHandledRef.current) return;
+    completionHandledRef.current = true;
+    const conversation = await ChatStorageService.getConversation(conversationId);
+    if (conversation?.activeCaseId) {
+      await ChatStorageService.saveConversation({
+        ...conversation,
+        activeCaseId: null,
+        lastCaseId: conversation.activeCaseId,
+      });
+    }
+
+    const completionMessage = {
+      id: generateUniqueId(),
+      type: 'text',
+      text: 'Your visit for this case has been completed by your healthcare facility. You can start a new assessment anytime if you need further help.',
+      timestamp: new Date().toISOString(),
+      sender: 'ai',
+    };
+    await ChatStorageService.addMessage(conversationId, completionMessage);
+    const updated = await ChatStorageService.getMessages(conversationId);
+    setMessages(updated);
+    setActiveCaseId(null);
+    contextSentRef.current = false;
+  };
 
   useEffect(() => {
     if (typing) {
@@ -138,7 +226,21 @@ export default function ChatConversationScreen({ route, navigation }) {
     }
   };
 
+  const buildPatientContext = () => {
+    const session = SessionService.getSession();
+    const parts = [];
+    if (session?.patientFirstName) {
+      const name = [session.patientFirstName, session.patientSurname].filter(Boolean).join(' ');
+      parts.push(`Patient: ${name}`);
+    }
+    if (session?.patientAge) parts.push(`Age: ${session.patientAge}`);
+    if (session?.facilityName) parts.push(`Facility: ${session.facilityName}`);
+    return parts.join('. ');
+  };
+
   const handleSend = async (messageContent) => {
+    if (caseLocked) return;
+
     let currentConversationId = conversationId;
 
     if (!currentConversationId) {
@@ -171,11 +273,20 @@ export default function ChatConversationScreen({ route, navigation }) {
     setTyping(true);
     
     let aiResponseMessage = null;
+    let finalTriage = null;
     
     try {
-      const response = await ApiService.sendChatMessage(userMessage, currentConvId);
+      // Patient context goes with the first message of the interview only
+      const patientContext = contextSentRef.current ? '' : buildPatientContext();
+
+      const response = await ApiService.sendTriageChatMessage(
+        userMessage.text || 'The patient sent a non-text message. Ask them to describe their symptoms in words.',
+        currentConvId,
+        patientContext,
+      );
 
       if (response.success && response.data) {
+        contextSentRef.current = true;
         aiResponseMessage = {
           id: generateUniqueId(),
           type: 'text',
@@ -186,8 +297,8 @@ export default function ChatConversationScreen({ route, navigation }) {
           isError: false
         };
 
-        if (response.data.conversation_title) {
-          await updateConversationInfo(userMessage, response.data.conversation_title);
+        if (response.data.phase === 'final' && response.data.triage) {
+          finalTriage = response.data.triage;
         }
       } else {
         aiResponseMessage = {
@@ -223,82 +334,93 @@ export default function ChatConversationScreen({ route, navigation }) {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     }
+
+    // The doctor reached a confident decision — submit the case to the facility
+    if (finalTriage) {
+      await submitFinalCase(finalTriage, currentConvId);
+    }
   };
 
-  const handleTriage = async () => {
-    const userMessages = messages.filter(m => m.sender === 'user' && m.text?.trim());
-    if (userMessages.length === 0) {
-      Alert.alert('No symptoms yet', 'Please describe your symptoms in the chat before requesting a triage assessment.');
-      return;
+  // Save the AI's final validated decision to Firestore and lock the chat.
+  const submitFinalCase = async (triage, currentConvId) => {
+    const session = SessionService.getSession();
+    const uid = auth.currentUser?.uid;
+    let caseId = null;
+
+    if (uid) {
+      try {
+        const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
+          patientId: uid,
+          patientName: [session?.patientFirstName, session?.patientSurname].filter(Boolean).join(' '),
+          facilityId: session?.facilityId || '',
+          facilityName: session?.facilityName || '',
+          chiefComplaint: triage.chiefComplaint || '',
+          symptoms: triage.symptomsSummary || '',
+          priority: triage.priority || 'MEDIUM',
+          riskScore: triage.riskScore ?? 50,
+          confidence: triage.confidence ?? 50,
+          reasoning: triage.reasoning || '',
+          riskIndicators: triage.riskIndicators || [],
+          recommendedAction: triage.recommendedAction || '',
+          estimatedWait: triage.estimatedWait || '',
+          source: 'ai_interview',
+          conversationId: currentConvId,
+          status: 'queued',
+          createdAt: serverTimestamp(),
+        });
+        caseId = ref.id;
+      } catch (err) {
+        console.log('[Triage] Firestore save error:', err.message);
+      }
     }
 
-    setTriaging(true);
-    try {
-      const symptomsText = userMessages.map(m => m.text.trim()).join('\n');
+    // Notify the patient their case was transferred, then lock the chat
+    const facilityName = session?.facilityName || 'your healthcare facility';
+    const transferMessage = {
+      id: generateUniqueId(),
+      type: 'text',
+      text: caseId
+        ? `Your assessment has been transferred to ${facilityName}. The care team has been notified and will attend to you based on your priority level (${triage.priority}). This chat is paused until your visit is completed — you don't need to do anything else right now.`
+        : `Your assessment is complete (priority: ${triage.priority}), but we could not reach ${facilityName} right now. Please show this assessment to the staff when you arrive, or try again once you are back online.`,
+      timestamp: new Date().toISOString(),
+      sender: 'ai',
+      isSystemNotice: true,
+    };
+    await ChatStorageService.addMessage(currentConvId, transferMessage);
+    const updated = await ChatStorageService.getMessages(currentConvId);
+    setMessages(updated);
 
-      // Build patient context from active session
-      const session = SessionService.getSession();
-      const contextParts = [];
-      if (session?.patientFirstName) {
-        const name = [session.patientFirstName, session.patientSurname].filter(Boolean).join(' ');
-        contextParts.push(`Patient: ${name}`);
+    if (caseId) {
+      const conversation = await ChatStorageService.getConversation(currentConvId);
+      if (conversation) {
+        await ChatStorageService.saveConversation({
+          ...conversation,
+          activeCaseId: caseId,
+          title: triage.chiefComplaint || conversation.title,
+        });
       }
-      if (session?.patientAge) contextParts.push(`Age: ${session.patientAge}`);
-      if (session?.facilityName) contextParts.push(`Facility: ${session.facilityName}`);
-      const contextStr = contextParts.join('. ');
-
-      const result = await ApiService.submitTriage(symptomsText, contextStr);
-
-      if (!result.success || !result.data) {
-        Alert.alert('Triage Unavailable', result.message || 'Could not complete the triage assessment. Please try again.');
-        return;
-      }
-
-      const { priority, riskScore, confidence, reasoning, riskIndicators, recommendedAction, estimatedWait } = result.data;
-
-      // Persist triage case to Firestore
-      const uid = auth.currentUser?.uid;
-      let caseId = null;
-      if (uid) {
-        try {
-          const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
-            patientId: uid,
-            facilityId: session?.facilityId || '',
-            facilityName: session?.facilityName || '',
-            symptoms: symptomsText,
-            priority: priority || 'MEDIUM',
-            riskScore: riskScore ?? 50,
-            confidence: confidence ?? 50,
-            reasoning: reasoning || '',
-            riskIndicators: riskIndicators || [],
-            recommendedAction: recommendedAction || '',
-            estimatedWait: estimatedWait || '',
-            status: 'queued',
-            createdAt: serverTimestamp(),
-          });
-          caseId = ref.id;
-        } catch (err) {
-          console.log('[Triage] Firestore save error:', err.message);
-        }
-      }
-
-      navigation.navigate('TriageResult', {
-        priority: priority || 'MEDIUM',
-        riskScore,
-        confidence,
-        reasoning,
-        riskIndicators,
-        recommendedAction,
-        estimatedWait,
-        symptoms: symptomsText.slice(0, 400),
-        caseId,
-      });
-    } catch (err) {
-      console.error('[Triage] Unexpected error:', err);
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      setTriaging(false);
+      if (triage.chiefComplaint) setConversationTitle(triage.chiefComplaint);
+      completionHandledRef.current = false;
+      setActiveCaseId(caseId);
+      setCaseStatus('queued');
     }
+
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 150);
+
+    // Show the structured result screen on top of the locked chat
+    navigation.navigate('TriageResult', {
+      priority: triage.priority || 'MEDIUM',
+      riskScore: triage.riskScore,
+      confidence: triage.confidence,
+      reasoning: triage.reasoning,
+      riskIndicators: triage.riskIndicators,
+      recommendedAction: triage.recommendedAction,
+      estimatedWait: triage.estimatedWait,
+      symptoms: (triage.symptomsSummary || '').slice(0, 400),
+      caseId,
+    });
   };
 
   const handleBack = async () => {
@@ -328,7 +450,11 @@ export default function ChatConversationScreen({ route, navigation }) {
           onPress: async () => {
             await ChatStorageService.clearMessages(conversationId);
             setMessages([]);
-            
+
+            // Reset the doctor interview on the server so a fresh one starts
+            ApiService.clearChatSession(conversationId).catch(() => {});
+            if (!caseLocked) contextSentRef.current = false;
+
             const conversation = await ChatStorageService.getConversation(conversationId);
             if (conversation) {
               await ChatStorageService.saveConversation({
@@ -471,24 +597,15 @@ export default function ChatConversationScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* Right: Triage CTA when conversation is active, status pill otherwise */}
+            {/* Right: case status when submitted, consultation status otherwise */}
             <View style={styles.statusSection}>
-              {messages.length > 0 ? (
-                <TouchableOpacity
-                  style={[styles.triageBtn, (triaging || typing) && styles.triageBtnBusy]}
-                  onPress={handleTriage}
-                  disabled={triaging || typing}
-                  activeOpacity={0.8}>
-                  {triaging
-                    ? <ActivityIndicator size="small" color="#FFFFFF" style={{ marginHorizontal: 4 }} />
-                    : (
-                      <>
-                        <Ionicons name="pulse" size={13} color="#FFFFFF" />
-                        <Text style={styles.triageBtnText}>Get Triage</Text>
-                      </>
-                    )
-                  }
-                </TouchableOpacity>
+              {caseLocked ? (
+                <View style={styles.casePill}>
+                  <Ionicons name="business" size={12} color={COLORS.warning} />
+                  <Text style={styles.casePillText}>
+                    {caseStatus === 'in_review' ? 'In review' : 'At facility'}
+                  </Text>
+                </View>
               ) : (
                 <View style={styles.statusPill}>
                   <View style={[styles.statusDot, typing && styles.statusDotThinking]} />
@@ -526,10 +643,26 @@ export default function ChatConversationScreen({ route, navigation }) {
           }}
         />
 
-        <ChatInput
-          onSendMessage={handleSend}
-          disabled={typing}
-        />
+        {caseLocked ? (
+          <View style={styles.lockedBar}>
+            <View style={styles.lockedIconWrap}>
+              <Ionicons name="shield-checkmark" size={18} color={COLORS.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.lockedTitle}>Case sent to your facility</Text>
+              <Text style={styles.lockedSub}>
+                {caseStatus === 'in_review'
+                  ? 'A healthcare professional is reviewing your case now.'
+                  : 'The chat will unlock once your visit is completed.'}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <ChatInput
+            onSendMessage={handleSend}
+            disabled={typing}
+          />
+        )}
       </KeyboardAvoidingView>
 
       {loading && (
@@ -662,22 +795,42 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
 
-  // Triage CTA button
-  triageBtn: {
+  // Case status pill (chat locked while case is at the facility)
+  casePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: COLORS.warningLight,
     borderRadius: 12,
-    ...Platform.select({
-      ios:     { shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.35, shadowRadius: 6 },
-      android: { elevation: 3 },
-    }),
+    borderWidth: 1,
+    borderColor: COLORS.warning + '40',
   },
-  triageBtnBusy: { opacity: 0.6 },
-  triageBtnText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+  casePillText: { fontSize: 11, fontWeight: '800', color: COLORS.warning },
+
+  // Locked input bar
+  lockedBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E8E8E8',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === 'ios' ? 105 : 105,
+  },
+  lockedIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primaryVeryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockedTitle: { fontSize: 14, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 2 },
+  lockedSub: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 16 },
 
   // Status Section
   statusSection: {

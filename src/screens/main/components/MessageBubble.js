@@ -55,7 +55,16 @@ const MessageBubble = ({ message, isFirstInGroup, isLastInGroup }) => {
       <View style={[
         styles.bubble,
         isUser ? styles.userBubble : styles.aiBubble,
+        message.isSystemNotice && styles.systemNoticeBubble,
       ]}>
+        {/* System notice badge (e.g. case transferred to facility) */}
+        {message.isSystemNotice && (
+          <View style={styles.systemNoticeBadge}>
+            <Ionicons name="business" size={12} color={COLORS.primary} />
+            <Text style={styles.systemNoticeBadgeText}>Facility update</Text>
+          </View>
+        )}
+
         {/* Image Message */}
         {renderImages()}
 
@@ -125,6 +134,24 @@ const MessageBubble = ({ message, isFirstInGroup, isLastInGroup }) => {
 
 // ... rest of the styles remain exactly the same
 const styles = StyleSheet.create({
+  systemNoticeBubble: {
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryGlow || COLORS.primary,
+    backgroundColor: COLORS.primaryVeryLight,
+  },
+  systemNoticeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
+  },
+  systemNoticeBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   messageContainer: {
     flexDirection: 'row',
     marginVertical: 2,

@@ -8,6 +8,7 @@ const API_CONFIG = {
 const ENDPOINTS = {
   CHATBOT: '/api/chatbot',
   TRIAGE: '/api/triage',
+  TRIAGE_CHAT: '/api/triage_chat',
   CLEAR_SESSION: '/api/clear_session',
   HEALTH_CHECK: '/health',
 };
@@ -292,6 +293,50 @@ const ApiService = {
         statusCode: parsedError.statusCode,
         data: null,
       };
+    }
+  },
+
+  // Doctor-style triage interview — one structured turn per call.
+  // Returns { success, data: { phase, confidence, response, triage|null, conversation_id } }
+  sendTriageChatMessage: async (message, conversationId = null, patientContext = '') => {
+    try {
+      const response = await fetchWithTimeout(
+        buildUrl(ENDPOINTS.TRIAGE_CHAT),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            message,
+            conversation_id: conversationId,
+            patient_context: patientContext,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || data.status === 'error') {
+        return {
+          success: false,
+          message: data.response || 'The consultation service is unavailable. Please try again.',
+          data: null,
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          phase: data.phase || 'interviewing',
+          confidence: data.confidence ?? 0,
+          response: data.response || '',
+          triage: data.triage || null,
+          conversation_id: data.conversation_id,
+          processing_time: data.processing_time,
+        },
+      };
+    } catch (error) {
+      const parsedError = parseError(error);
+      return { success: false, message: parsedError.message, data: null };
     }
   },
 
