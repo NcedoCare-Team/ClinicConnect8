@@ -8,7 +8,7 @@ import {
   TextInput, Platform, StatusBar, ActivityIndicator,
   RefreshControl, Keyboard, Alert,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from 'expo-linear-gradient';      
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { COLORS } from '../../constants/colors';

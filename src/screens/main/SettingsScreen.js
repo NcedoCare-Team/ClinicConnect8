@@ -25,7 +25,7 @@ const LANGUAGES = [
   { code: 'st', name: 'Sesotho' },
 ];
 
-const PROFILE_SECTIONS = [
+const PROFILE_SECTIONS = [      
   {
     title: 'Personal Information',
     rows: [
