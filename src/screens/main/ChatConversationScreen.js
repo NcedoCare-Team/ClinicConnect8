@@ -14,14 +14,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { collection, addDoc, doc, onSnapshot, serverTimestamp, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { COLLECTIONS } from '../../services/firestorePaths';
 import ApiService from '../../services/ApiService';
 import { ChatStorageService } from '../../services/ChatStorageService';
 import { SessionService } from '../../services/SessionService';
-import { estimateWaitMinutes, formatWaitMinutes, sortQueueByUrgency } from '../../utils/queueWait';
 import MessageBubble from './components/MessageBubble';
 import ChatInput from './components/ChatInput';
 
@@ -232,15 +231,19 @@ export default function ChatConversationScreen({ route, navigation }) {
     }
   };
 
-  const buildPatientContext = () => {
-    // POPIA: never send name, ID, phone, email, or facility-bound identity to the AI.
-    // Age (years) is the only demographic allowed for clinical context.
+  const buildSealedBinding = () => {
+    // Sealed for the backend only — never entered into the AI prompt.
+    // Age is released to the model only if it calls get_clinical_attribute.
     const session = SessionService.getSession();
+    const uid = auth.currentUser?.uid || '';
     const age = session?.patientAge;
-    if (typeof age === 'number' && age > 0 && age < 130) {
-      return `POPIA: No identifying patient details. Age only (years): ${Math.round(age)}. Use symptoms and age for clinical guidance; do not request or store the patient's name, ID, phone, or address.`;
-    }
-    return 'POPIA: No identifying patient details. Use symptom history only. Age unknown.';
+    return {
+      patientId: uid,
+      facilityId: session?.facilityId || '',
+      facilityName: session?.facilityName || '',
+      patientName: [session?.patientFirstName, session?.patientSurname].filter(Boolean).join(' '),
+      ageYears: typeof age === 'number' && age > 0 && age < 130 ? Math.round(age) : null,
+    };
   };
 
   const handleSend = async (messageContent) => {
@@ -278,32 +281,37 @@ export default function ChatConversationScreen({ route, navigation }) {
     setTyping(true);
     
     let aiResponseMessage = null;
-    let finalTriage = null;
+    let queuedCaseId = null;
+    let fallbackFields = null;
     
     try {
-      // Patient context goes with the first message of the interview only
-      const patientContext = contextSentRef.current ? '' : buildPatientContext();
+      // Sealed binding on every turn so the backend can execute submit_triage_case —
+      // identity is never prompt-injected (see /api/triage_chat).
+      const binding = buildSealedBinding();
 
       const response = await ApiService.sendTriageChatMessage(
-        userMessage.text || 'The patient sent a non-text message. Ask them to describe their symptoms in words.',
+        userMessage.text || 'Please describe your symptoms in words.',
         currentConvId,
-        patientContext,
+        binding,
       );
 
       if (response.success && response.data) {
         contextSentRef.current = true;
+        const plain = String(response.data.response || '').trim();
         aiResponseMessage = {
           id: generateUniqueId(),
           type: 'text',
-          text: response.data.response,
+          text: plain,
           timestamp: new Date().toISOString(),
           sender: 'ai',
           processingTime: response.data.processing_time,
-          isError: false
+          isError: false,
+          isSystemNotice: response.data.phase === 'queued',
         };
 
-        if (response.data.phase === 'final' && response.data.triage) {
-          finalTriage = response.data.triage;
+        if (response.data.phase === 'queued') {
+          queuedCaseId = response.data.case_id || null;
+          fallbackFields = response.data.fallback_fields || null;
         }
       } else {
         aiResponseMessage = {
@@ -340,121 +348,48 @@ export default function ChatConversationScreen({ route, navigation }) {
       }, 100);
     }
 
-    // The doctor reached a confident decision — submit the case to the facility
-    if (finalTriage) {
-      await submitFinalCase(finalTriage, currentConvId);
+    // Backend function calling already wrote the case — lock chat. Never show triage results.
+    if (queuedCaseId || fallbackFields) {
+      await lockQueuedCase(currentConvId, queuedCaseId, fallbackFields);
     }
   };
 
-  // Save the AI's final validated decision to Firestore and lock the chat.
-  const submitFinalCase = async (triage, currentConvId) => {
-    const session = SessionService.getSession();
-    const uid = auth.currentUser?.uid;
-    let caseId = null;
-    let waitMins = estimateWaitMinutes(triage.priority || 'MEDIUM', 0);
+  // After submit_triage_case: lock chat until facility marks the visit completed.
+  // Clinical fields stay facility-only — patients never see priority / scores here.
+  const lockQueuedCase = async (currentConvId, caseId, fallbackFields) => {
+    let resolvedId = caseId;
 
-    if (uid) {
+    // If backend tool write failed, persist sealed clinical fields from the server once
+    if (!resolvedId && fallbackFields && auth.currentUser?.uid) {
       try {
-        const aiPriority = triage.priority || 'MEDIUM';
-        // Count facility queue so wait is based on patients ahead — never AI "1 hour" guesses
-        let aheadCount = 0;
-        try {
-          if (session?.facilityId) {
-            const q = query(
-              collection(firestore, COLLECTIONS.TRIAGE_CASES),
-              where('facilityId', '==', session.facilityId),
-              orderBy('createdAt', 'desc')
-            );
-            const snap = await getDocs(q);
-            const active = sortQueueByUrgency(
-              snap.docs
-                .map((d) => ({ id: d.id, ...d.data() }))
-                .filter((c) => c.status === 'queued' || c.status === 'in_review')
-            );
-            aheadCount = active.length; // new case joins after current queue
-          }
-        } catch (e) {
-          console.log('[Triage] queue count skipped:', e.message);
-        }
-        waitMins = estimateWaitMinutes(aiPriority, aheadCount);
-        const waitLabel = formatWaitMinutes(waitMins);
         const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
-          patientId: uid,
-          patientName: [session?.patientFirstName, session?.patientSurname].filter(Boolean).join(' '),
-          facilityId: session?.facilityId || '',
-          facilityName: session?.facilityName || '',
-          chiefComplaint: triage.chiefComplaint || '',
-          symptoms: triage.symptomsSummary || '',
-          priority: aiPriority,
-          aiPriority,
-          riskScore: triage.riskScore ?? 50,
-          confidence: triage.confidence ?? 50,
-          reasoning: triage.reasoning || '',
-          riskIndicators: triage.riskIndicators || [],
-          recommendedAction: triage.recommendedAction || '',
-          estimatedWaitMinutes: waitMins,
-          estimatedWait: waitLabel,
-          queuePosition: aheadCount + 1,
-          waitUpdatedAt: serverTimestamp(),
-          source: 'ai_interview',
-          conversationId: currentConvId,
-          status: 'queued',
+          ...fallbackFields,
           createdAt: serverTimestamp(),
+          waitUpdatedAt: serverTimestamp(),
         });
-        caseId = ref.id;
+        resolvedId = ref.id;
       } catch (err) {
-        console.log('[Triage] Firestore save error:', err.message);
+        console.log('[Triage] fallback write error:', err.message);
       }
     }
 
-    // Notify the patient their case was transferred, then lock the chat.
-    // Do not expose triage colour / priority — that is for clinical staff only.
-    const facilityName = session?.facilityName || 'your healthcare facility';
-    const transferMessage = {
-      id: generateUniqueId(),
-      type: 'text',
-      text: caseId
-        ? `Your assessment has been transferred to ${facilityName}. You are now in the queue — the care team will call you when they are ready. This chat is paused until your visit is completed.`
-        : `Your assessment is complete, but we could not reach ${facilityName} right now. Please speak to reception when you arrive, or try again once you are back online.`,
-      timestamp: new Date().toISOString(),
-      sender: 'ai',
-      isSystemNotice: true,
-    };
-    await ChatStorageService.addMessage(currentConvId, transferMessage);
-    const updated = await ChatStorageService.getMessages(currentConvId);
-    setMessages(updated);
-
-    if (caseId) {
+    if (resolvedId) {
       const conversation = await ChatStorageService.getConversation(currentConvId);
       if (conversation) {
         await ChatStorageService.saveConversation({
           ...conversation,
-          activeCaseId: caseId,
-          title: triage.chiefComplaint || conversation.title,
+          activeCaseId: resolvedId,
+          title: conversation.title || 'Health Assessment',
         });
       }
-      if (triage.chiefComplaint) setConversationTitle(triage.chiefComplaint);
       completionHandledRef.current = false;
-      setActiveCaseId(caseId);
+      setActiveCaseId(resolvedId);
       setCaseStatus('queued');
     }
 
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 150);
-
-    // Show the structured result screen on top of the locked chat
-    navigation.navigate('TriageResult', {
-      priority: triage.priority || 'MEDIUM',
-      riskScore: triage.riskScore,
-      confidence: triage.confidence,
-      reasoning: triage.reasoning,
-      riskIndicators: triage.riskIndicators,
-      recommendedAction: triage.recommendedAction,
-      estimatedWait: formatWaitMinutes(waitMins),
-      symptoms: (triage.symptomsSummary || '').slice(0, 400),
-      caseId,
-    });
   };
 
   const handleBack = async () => {

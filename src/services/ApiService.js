@@ -1,3 +1,5 @@
+import { auth } from '../../firebase';
+
 const API_CONFIG = {
   // BASE_URL: 'http://YOUR_LOCAL_IP:5000',   
 
@@ -296,15 +298,28 @@ const ApiService = {
     }
   },
 
-  // Doctor-style triage interview — one structured turn per call.
-  // POPIA: patient_context must never include names, ID numbers, phones, or emails.
-  // Prefer age-only clinical context from the client (buildPatientContext).
-  sendTriageChatMessage: async (message, conversationId = null, patientContext = '') => {
+  // Doctor-style triage interview — Gemini function calling on the backend.
+  // Patient-facing channel is plain text only. Identity is sealed as session_binding
+  // (never prompt-injected). Final triage is written by the backend after tool call.
+  sendTriageChatMessage: async (message, conversationId = null, sessionBinding = null) => {
     try {
-      // Defence in depth — strip common identity patterns before the request leaves the device
-      const safeContext = String(patientContext || '')
-        .replace(/\b(patient|name|id|passport|email|phone|address)\s*:\s*[^\n.]+/gi, '')
-        .trim();
+      let idToken = null
+      try {
+        idToken = await auth.currentUser?.getIdToken?.() || null
+      } catch {
+        idToken = null
+      }
+
+      // Only allow known sealed keys — never free-text identity prompts
+      const binding = sessionBinding && typeof sessionBinding === 'object'
+        ? {
+            patientId: sessionBinding.patientId || '',
+            facilityId: sessionBinding.facilityId || '',
+            facilityName: sessionBinding.facilityName || '',
+            patientName: sessionBinding.patientName || '',
+            ageYears: typeof sessionBinding.ageYears === 'number' ? sessionBinding.ageYears : null,
+          }
+        : null
 
       const response = await fetchWithTimeout(
         buildUrl(ENDPOINTS.TRIAGE_CHAT),
@@ -314,35 +329,36 @@ const ApiService = {
           body: JSON.stringify({
             message,
             conversation_id: conversationId,
-            patient_context: safeContext,
+            id_token: idToken,
+            session_binding: binding,
           }),
         }
-      );
+      )
 
-      const data = await response.json();
+      const data = await response.json()
 
       if (!response.ok || data.status === 'error') {
         return {
           success: false,
           message: data.response || 'The consultation service is unavailable. Please try again.',
           data: null,
-        };
+        }
       }
 
       return {
         success: true,
         data: {
           phase: data.phase || 'interviewing',
-          confidence: data.confidence ?? 0,
           response: data.response || '',
-          triage: data.triage || null,
+          case_id: data.case_id || null,
+          fallback_fields: data.fallback_fields || null,
           conversation_id: data.conversation_id,
           processing_time: data.processing_time,
         },
-      };
+      }
     } catch (error) {
-      const parsedError = parseError(error);
-      return { success: false, message: parsedError.message, data: null };
+      const parsedError = parseError(error)
+      return { success: false, message: parsedError.message, data: null }
     }
   },
 
