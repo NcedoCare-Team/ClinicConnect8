@@ -34,6 +34,7 @@ export default function ChatConversationScreen({ route, navigation }) {
   const [conversationTitle, setConversationTitle] = useState(initialTitle);
   const [activeCaseId, setActiveCaseId] = useState(null);
   const [caseStatus, setCaseStatus] = useState(null);
+  const [patientCalled, setPatientCalled] = useState(false);
 
   const flatListRef = useRef(null);
   const slideAnim = useRef(new Animated.Value(100)).current;
@@ -95,10 +96,13 @@ export default function ChatConversationScreen({ route, navigation }) {
       (snap) => {
         if (!snap.exists()) {
           setCaseStatus('completed');
+          setPatientCalled(false);
           return;
         }
-        const status = snap.data().status || 'queued';
+        const data = snap.data() || {};
+        const status = data.status || 'queued';
         setCaseStatus(status);
+        setPatientCalled(Boolean(data.patientCalledAt || data.patientNotified));
         if (status === 'completed') {
           markCaseCompleted();
         }
@@ -106,6 +110,7 @@ export default function ChatConversationScreen({ route, navigation }) {
       (err) => {
         console.log('[Triage] case listener error:', err.message);
         setCaseStatus('queued');
+        setPatientCalled(false);
       }
     );
 
@@ -604,9 +609,17 @@ export default function ChatConversationScreen({ route, navigation }) {
             <View style={styles.statusSection}>
               {caseLocked ? (
                 <View style={styles.casePill}>
-                  <Ionicons name="business" size={12} color={COLORS.warning} />
+                  <Ionicons
+                    name={patientCalled ? 'notifications' : 'business'}
+                    size={12}
+                    color={patientCalled ? COLORS.success || '#16A34A' : COLORS.warning}
+                  />
                   <Text style={styles.casePillText}>
-                    {caseStatus === 'in_review' ? 'Under process' : 'In queue'}
+                    {patientCalled
+                      ? 'Please come in'
+                      : caseStatus === 'in_review'
+                        ? 'Under process'
+                        : 'In queue'}
                   </Text>
                 </View>
               ) : (
@@ -652,11 +665,17 @@ export default function ChatConversationScreen({ route, navigation }) {
               <Ionicons name="shield-checkmark" size={18} color={COLORS.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.lockedTitle}>Case sent to your facility</Text>
+              <Text style={styles.lockedTitle}>
+                {patientCalled
+                  ? 'Please come in'
+                  : 'Case sent to your facility'}
+              </Text>
               <Text style={styles.lockedSub}>
-                {caseStatus === 'in_review'
-                  ? 'A healthcare professional is reviewing your case now.'
-                  : 'The chat will unlock once your visit is completed.'}
+                {patientCalled
+                  ? 'A nurse is ready for you — proceed to triage / reception.'
+                  : caseStatus === 'in_review'
+                    ? 'Your assessment is under process. Track your journey for live updates.'
+                    : 'You are in the queue. The chat unlocks when your visit is completed.'}
               </Text>
             </View>
           </View>

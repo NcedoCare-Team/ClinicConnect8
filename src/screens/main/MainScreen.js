@@ -12,7 +12,7 @@ import { SessionService } from '../../services/SessionService';
 
 import HomeScreen               from './HomeScreen';
 import SmartChatScreen          from './SmartChatScreen';
-import HealthRecordScreen       from './HealthRecordScreen';
+import JobTrendsScreen          from './JobTrendsScreen';
 import CommunityInsightsScreen  from './CommunityInsightsScreen';
 import SettingsScreen           from './SettingsScreen';
 
@@ -27,18 +27,18 @@ const TABS = [
 const TAB_MAP = {
   home:       HomeScreen,
   assessment: SmartChatScreen,
-  journey:    HealthRecordScreen,
+  journey:    JobTrendsScreen,
   insights:   CommunityInsightsScreen,
   profile:    SettingsScreen,
   symptoms:   SmartChatScreen,
-  records:    HealthRecordScreen,
-  queue:      HomeScreen,
+  records:    JobTrendsScreen,
+  queue:      JobTrendsScreen,
 };
 
 function mapTab(tabId) {
   if (tabId === 'symptoms') return 'assessment';
   if (tabId === 'records')  return 'journey';
-  if (tabId === 'queue')    return 'home';
+  if (tabId === 'queue')    return 'journey';
   return tabId;
 }
 

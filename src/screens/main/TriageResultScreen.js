@@ -212,13 +212,13 @@ export default function TriageResultScreen({ navigation, route }) {
           <View style={styles.actionsSection}>
             <TouchableOpacity
               style={styles.primaryAction}
-              onPress={() => navigation.getParent?.()?.jumpTo('journey') || navigation.navigate('Main', { tab: 'journey' })}
+              onPress={() => navigation.navigate('Main', { tab: 'journey' })}
               activeOpacity={0.85}>
               <LinearGradient
                 colors={cfg.gradient}
                 style={styles.primaryActionGrad}>
                 <Ionicons name="git-network-outline" size={20} color={COLORS.white} />
-                <Text style={styles.primaryActionText}>View in Health Journey</Text>
+                <Text style={styles.primaryActionText}>Track my care journey</Text>
               </LinearGradient>
             </TouchableOpacity>
 
