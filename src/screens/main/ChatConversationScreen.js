@@ -349,6 +349,7 @@ export default function ChatConversationScreen({ route, navigation }) {
 
     if (uid) {
       try {
+        const aiPriority = triage.priority || 'MEDIUM';
         const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
           patientId: uid,
           patientName: [session?.patientFirstName, session?.patientSurname].filter(Boolean).join(' '),
@@ -356,7 +357,8 @@ export default function ChatConversationScreen({ route, navigation }) {
           facilityName: session?.facilityName || '',
           chiefComplaint: triage.chiefComplaint || '',
           symptoms: triage.symptomsSummary || '',
-          priority: triage.priority || 'MEDIUM',
+          priority: aiPriority,
+          aiPriority,
           riskScore: triage.riskScore ?? 50,
           confidence: triage.confidence ?? 50,
           reasoning: triage.reasoning || '',
@@ -374,14 +376,15 @@ export default function ChatConversationScreen({ route, navigation }) {
       }
     }
 
-    // Notify the patient their case was transferred, then lock the chat
+    // Notify the patient their case was transferred, then lock the chat.
+    // Do not expose triage colour / priority — that is for clinical staff only.
     const facilityName = session?.facilityName || 'your healthcare facility';
     const transferMessage = {
       id: generateUniqueId(),
       type: 'text',
       text: caseId
-        ? `Your assessment has been transferred to ${facilityName}. The care team has been notified and will attend to you based on your priority level (${triage.priority}). This chat is paused until your visit is completed — you don't need to do anything else right now.`
-        : `Your assessment is complete (priority: ${triage.priority}), but we could not reach ${facilityName} right now. Please show this assessment to the staff when you arrive, or try again once you are back online.`,
+        ? `Your assessment has been transferred to ${facilityName}. You are now in the queue — the care team will call you when they are ready. This chat is paused until your visit is completed.`
+        : `Your assessment is complete, but we could not reach ${facilityName} right now. Please speak to reception when you arrive, or try again once you are back online.`,
       timestamp: new Date().toISOString(),
       sender: 'ai',
       isSystemNotice: true,
@@ -603,7 +606,7 @@ export default function ChatConversationScreen({ route, navigation }) {
                 <View style={styles.casePill}>
                   <Ionicons name="business" size={12} color={COLORS.warning} />
                   <Text style={styles.casePillText}>
-                    {caseStatus === 'in_review' ? 'In review' : 'At facility'}
+                    {caseStatus === 'in_review' ? 'Under process' : 'In queue'}
                   </Text>
                 </View>
               ) : (
