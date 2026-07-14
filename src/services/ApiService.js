@@ -297,9 +297,15 @@ const ApiService = {
   },
 
   // Doctor-style triage interview — one structured turn per call.
-  // Returns { success, data: { phase, confidence, response, triage|null, conversation_id } }
+  // POPIA: patient_context must never include names, ID numbers, phones, or emails.
+  // Prefer age-only clinical context from the client (buildPatientContext).
   sendTriageChatMessage: async (message, conversationId = null, patientContext = '') => {
     try {
+      // Defence in depth — strip common identity patterns before the request leaves the device
+      const safeContext = String(patientContext || '')
+        .replace(/\b(patient|name|id|passport|email|phone|address)\s*:\s*[^\n.]+/gi, '')
+        .trim();
+
       const response = await fetchWithTimeout(
         buildUrl(ENDPOINTS.TRIAGE_CHAT),
         {
@@ -308,7 +314,7 @@ const ApiService = {
           body: JSON.stringify({
             message,
             conversation_id: conversationId,
-            patient_context: patientContext,
+            patient_context: safeContext,
           }),
         }
       );

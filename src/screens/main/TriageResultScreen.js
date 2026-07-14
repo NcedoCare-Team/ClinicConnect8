@@ -235,7 +235,7 @@ export default function TriageResultScreen({ navigation, route }) {
           <View style={styles.disclaimer}>
             <Ionicons name="information-circle-outline" size={14} color={COLORS.textTertiary} />
             <Text style={styles.disclaimerText}>
-              This AI assessment is a guide only. A qualified nurse or doctor will review and confirm your priority level. In a life-threatening emergency, call 10177 immediately.
+              This AI assessment guides the care team only. A nurse or doctor will review your case. Identifying details are not shared with the AI model (POPIA). In a life-threatening emergency, call 10177 immediately.
             </Text>
           </View>
 

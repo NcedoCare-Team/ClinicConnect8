@@ -232,15 +232,14 @@ export default function ChatConversationScreen({ route, navigation }) {
   };
 
   const buildPatientContext = () => {
+    // POPIA: never send name, ID, phone, email, or facility-bound identity to the AI.
+    // Age (years) is the only demographic allowed for clinical context.
     const session = SessionService.getSession();
-    const parts = [];
-    if (session?.patientFirstName) {
-      const name = [session.patientFirstName, session.patientSurname].filter(Boolean).join(' ');
-      parts.push(`Patient: ${name}`);
+    const age = session?.patientAge;
+    if (typeof age === 'number' && age > 0 && age < 130) {
+      return `POPIA: No identifying patient details. Age only (years): ${Math.round(age)}. Use symptoms and age for clinical guidance; do not request or store the patient's name, ID, phone, or address.`;
     }
-    if (session?.patientAge) parts.push(`Age: ${session.patientAge}`);
-    if (session?.facilityName) parts.push(`Facility: ${session.facilityName}`);
-    return parts.join('. ');
+    return 'POPIA: No identifying patient details. Use symptom history only. Age unknown.';
   };
 
   const handleSend = async (messageContent) => {
