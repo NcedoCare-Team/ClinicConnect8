@@ -9,7 +9,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, where, orderBy, limit, getDocs, onSnapshot, doc } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { COLLECTIONS, patientRef } from '../../services/firestorePaths';
@@ -21,12 +21,22 @@ import InsightCard from '../../components/insights/InsightCard';
 import { SessionService } from '../../services/SessionService';
 import { SleepTrackingService } from '../../services/SleepTrackingService';
 import { useFacility } from '../../contexts/FacilityContext';
+import {
+  getFacilityJourneyPhase,
+  facilityJourneyLabel,
+} from '../../utils/facilityJourney';
 
-const STATUS_BADGE = {
-  queued:    { label: 'Submitted', color: COLORS.medium,  bg: COLORS.mediumLight  },
-  in_review: { label: 'Reviewed',  color: COLORS.primary, bg: COLORS.primaryVeryLight },
-  completed: { label: 'Closed',    color: COLORS.low,     bg: COLORS.lowLight     },
-};
+function statusBadgeForCase(c) {
+  const phase = getFacilityJourneyPhase(c);
+  const label = facilityJourneyLabel(phase) || 'Waiting';
+  if (phase === 'completed') {
+    return { label, color: COLORS.low || '#16A34A', bg: COLORS.lowLight || '#DCFCE7' };
+  }
+  if (phase === 'attended') {
+    return { label, color: COLORS.primary, bg: COLORS.primaryVeryLight };
+  }
+  return { label, color: COLORS.medium, bg: COLORS.mediumLight };
+}
 
 export default function HomeScreen({ navigation }) {
   const { facilityName, hasFacility } = useFacility();
@@ -37,8 +47,6 @@ export default function HomeScreen({ navigation }) {
   const [healthData,       setHealthData]       = useState(null);
   const [sleepData,        setSleepData]        = useState(() => SleepTrackingService.getSleepData());
   // const [notificationCount, setNotificationCount] = useState(3);
-
-  useEffect(() => { loadDashboard(); }, []);
 
   // Real-time health metrics listener (smartwatch data via Firestore)
   useEffect(() => {
@@ -70,29 +78,44 @@ export default function HomeScreen({ navigation }) {
     }, [facilityName, hasFacility])
   );
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
+  // Live queue status for care timeline (Waiting → Attended → Completed)
+  useEffect(() => {
     const uid = auth.currentUser?.uid;
-    const profile = await UserProfileService.getProfile();
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const unsubRef = { current: null };
+    (async () => {
+      const profile = await UserProfileService.getProfile();
+      if (cancelled) return;
+      const sessionFacility = SessionService.getFacilityName();
+      setFacility(sessionFacility || profile.primaryFacility || profile.location || '');
 
-    const sessionFacility = SessionService.getFacilityName();
-    setFacility(sessionFacility || profile.primaryFacility || profile.location || '');
-
-    if (uid) {
-      try {
-        const casesRef = collection(firestore, COLLECTIONS.TRIAGE_CASES);
-        const snap = await getDocs(query(
-          casesRef,
+      unsubRef.current = onSnapshot(
+        query(
+          collection(firestore, COLLECTIONS.TRIAGE_CASES),
           where('patientId', '==', uid),
           orderBy('createdAt', 'desc'),
           limit(5),
-        ));
-        const cases = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setCareItems(buildCareTimeline(cases, profile));
-        setLastAssessment(cases[0] || null);
-      } catch { /* non-critical */ }
-    }
-    setLoading(false);
+        ),
+        (snap) => {
+          const cases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setCareItems(buildCareTimeline(cases, profile));
+          setLastAssessment(cases[0] || null);
+          setLoading(false);
+        },
+        () => {
+          setLoading(false);
+        }
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unsubRef.current) unsubRef.current();
+    };
   }, []);
 
   const handleChangeFacility = () => {
@@ -354,7 +377,7 @@ function buildCareTimeline(cases, profile) {
   }
 
   cases.slice(0, 4).forEach(c => {
-    const badge = STATUS_BADGE[c.status] || STATUS_BADGE.queued;
+    const badge = statusBadgeForCase(c);
     items.push({
       id: c.id,
       icon: 'document-text-outline',

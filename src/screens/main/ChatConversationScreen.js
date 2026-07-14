@@ -23,6 +23,12 @@ import { ChatStorageService } from '../../services/ChatStorageService';
 import { SessionService } from '../../services/SessionService';
 import MessageBubble from './components/MessageBubble';
 import ChatInput from './components/ChatInput';
+import FacilityJourneyStepper from '../../components/FacilityJourneyStepper';
+import {
+  getFacilityJourneyPhase,
+  facilityJourneyLabel,
+  facilityJourneyNotice,
+} from '../../utils/facilityJourney';
 
 export default function ChatConversationScreen({ route, navigation }) {
   const { conversationId: initialConversationId, conversationTitle: initialTitle } = route.params || {};
@@ -35,6 +41,7 @@ export default function ChatConversationScreen({ route, navigation }) {
   const [activeCaseId, setActiveCaseId] = useState(null);
   const [caseStatus, setCaseStatus] = useState(null);
   const [patientCalled, setPatientCalled] = useState(false);
+  const [liveCase, setLiveCase] = useState(null);
 
   const flatListRef = useRef(null);
   const slideAnim = useRef(new Animated.Value(100)).current;
@@ -42,9 +49,13 @@ export default function ChatConversationScreen({ route, navigation }) {
   const contextSentRef = useRef(false);
   const caseUnsubRef = useRef(null);
   const completionHandledRef = useRef(false);
+  const lastPhaseRef = useRef(null);
 
   // Chat is locked from the moment a case is submitted until the facility completes it
-  const caseLocked = Boolean(activeCaseId) && caseStatus !== 'completed';
+  const journeyPhase = getFacilityJourneyPhase(
+    liveCase || (caseStatus ? { status: caseStatus, patientCalledAt: patientCalled } : null)
+  );
+  const caseLocked = Boolean(activeCaseId) && journeyPhase !== 'completed' && caseStatus !== 'completed';
 
   useEffect(() => {
     loadMessages();
@@ -79,7 +90,7 @@ export default function ChatConversationScreen({ route, navigation }) {
     })();
   }, [conversationId]);
 
-  // Live status of the submitted case — unlocks the chat when the facility completes it
+  // Live status of the submitted case — mirrors web staff actions in real time
   useEffect(() => {
     if (caseUnsubRef.current) {
       caseUnsubRef.current();
@@ -87,22 +98,35 @@ export default function ChatConversationScreen({ route, navigation }) {
     }
     if (!activeCaseId) {
       setCaseStatus(null);
+      setLiveCase(null);
+      lastPhaseRef.current = null;
       return;
     }
 
     const caseRef = doc(firestore, COLLECTIONS.TRIAGE_CASES, activeCaseId);
     caseUnsubRef.current = onSnapshot(
       caseRef,
-      (snap) => {
+      async (snap) => {
         if (!snap.exists()) {
           setCaseStatus('completed');
           setPatientCalled(false);
+          setLiveCase({ status: 'completed' });
+          await pushPhaseNotice('completed');
+          markCaseCompleted();
           return;
         }
-        const data = snap.data() || {};
+        const data = { id: snap.id, ...snap.data() };
         const status = data.status || 'queued';
+        setLiveCase(data);
         setCaseStatus(status);
         setPatientCalled(Boolean(data.patientCalledAt || data.patientNotified));
+
+        const phase = getFacilityJourneyPhase(data);
+        if (phase && phase !== lastPhaseRef.current) {
+          await pushPhaseNotice(phase, data.facilityName);
+          lastPhaseRef.current = phase;
+        }
+
         if (status === 'completed') {
           markCaseCompleted();
         }
@@ -120,7 +144,30 @@ export default function ChatConversationScreen({ route, navigation }) {
         caseUnsubRef.current = null;
       }
     };
-  }, [activeCaseId]);
+  }, [activeCaseId, conversationId]);
+
+  const pushPhaseNotice = async (phase, facilityName) => {
+    if (!conversationId || !phase) return;
+    // Skip duplicate "waiting" notice if we already showed the queue confirmation from the AI
+    if (phase === 'waiting' && lastPhaseRef.current == null) {
+      lastPhaseRef.current = 'waiting';
+      return;
+    }
+    const text = facilityJourneyNotice(phase, facilityName);
+    if (!text) return;
+    const notice = {
+      id: `journey_${phase}_${Date.now()}`,
+      type: 'text',
+      text,
+      timestamp: new Date().toISOString(),
+      sender: 'ai',
+      isSystemNotice: true,
+    };
+    await ChatStorageService.addMessage(conversationId, notice);
+    const updated = await ChatStorageService.getMessages(conversationId);
+    setMessages(updated);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+  };
 
   const markCaseCompleted = async () => {
     if (!conversationId || completionHandledRef.current) return;
@@ -389,8 +436,14 @@ export default function ChatConversationScreen({ route, navigation }) {
         });
       }
       completionHandledRef.current = false;
+      lastPhaseRef.current = 'waiting';
       setActiveCaseId(resolvedId);
       setCaseStatus('queued');
+      setLiveCase({
+        id: resolvedId,
+        status: 'queued',
+        facilityName: SessionService.getSession()?.facilityName || '',
+      });
     }
 
     setTimeout(() => {
@@ -572,21 +625,37 @@ export default function ChatConversationScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* Right: case status when submitted, consultation status otherwise */}
+            {/* Right: live facility journey phase */}
             <View style={styles.statusSection}>
-              {caseLocked ? (
-                <View style={styles.casePill}>
+              {caseLocked || journeyPhase === 'completed' ? (
+                <View style={[
+                  styles.casePill,
+                  journeyPhase === 'attended' && styles.casePillAttended,
+                  journeyPhase === 'completed' && styles.casePillDone,
+                ]}>
                   <Ionicons
-                    name={patientCalled ? 'notifications' : 'business'}
+                    name={
+                      journeyPhase === 'completed'
+                        ? 'checkmark-circle'
+                        : journeyPhase === 'attended'
+                          ? 'medical'
+                          : 'time'
+                    }
                     size={12}
-                    color={patientCalled ? COLORS.success || '#16A34A' : COLORS.warning}
+                    color={
+                      journeyPhase === 'completed'
+                        ? (COLORS.success || '#16A34A')
+                        : journeyPhase === 'attended'
+                          ? COLORS.primary
+                          : COLORS.warning
+                    }
                   />
-                  <Text style={styles.casePillText}>
-                    {patientCalled
-                      ? 'Please come in'
-                      : caseStatus === 'in_review'
-                        ? 'Under process'
-                        : 'In queue'}
+                  <Text style={[
+                    styles.casePillText,
+                    journeyPhase === 'attended' && { color: COLORS.primary },
+                    journeyPhase === 'completed' && { color: COLORS.success || '#16A34A' },
+                  ]}>
+                    {facilityJourneyLabel(journeyPhase) || 'Waiting'}
                   </Text>
                 </View>
               ) : (
@@ -628,22 +697,15 @@ export default function ChatConversationScreen({ route, navigation }) {
 
         {caseLocked ? (
           <View style={styles.lockedBar}>
-            <View style={styles.lockedIconWrap}>
-              <Ionicons name="shield-checkmark" size={18} color={COLORS.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.lockedTitle}>
-                {patientCalled
-                  ? 'Please come in'
-                  : 'Case sent to your facility'}
-              </Text>
-              <Text style={styles.lockedSub}>
-                {patientCalled
-                  ? 'A nurse is ready for you — proceed to triage / reception.'
-                  : caseStatus === 'in_review'
-                    ? 'Your assessment is under process. Track your journey for live updates.'
-                    : 'You are in the queue. The chat unlocks when your visit is completed.'}
-              </Text>
+            <Text style={styles.lockedTitle}>Facility queue · live</Text>
+            <Text style={styles.lockedSub}>
+              Updates as the care team works on your visit. Chat stays paused until completion.
+            </Text>
+            <View style={styles.journeyBox}>
+              <FacilityJourneyStepper
+                caseData={liveCase || { status: caseStatus || 'queued', patientCalledAt: patientCalled }}
+                compact
+              />
             </View>
           </View>
         ) : (
@@ -798,17 +860,14 @@ const styles = StyleSheet.create({
   },
   casePillText: { fontSize: 11, fontWeight: '800', color: COLORS.warning },
 
-  // Locked input bar
+  // Locked input bar — live Waiting → Attended → Completed
   lockedBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E8E8E8',
     paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: Platform.OS === 'ios' ? 105 : 105,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 100 : 100,
   },
   lockedIconWrap: {
     width: 40,
@@ -819,7 +878,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   lockedTitle: { fontSize: 14, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 2 },
-  lockedSub: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 16 },
+  lockedSub: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 16, marginBottom: 10 },
+  journeyBox: {
+    backgroundColor: COLORS.backgroundSecondary || '#F8FAFC',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 4,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight || '#E2E8F0',
+  },
+  casePillAttended: {
+    backgroundColor: COLORS.primaryVeryLight,
+    borderColor: COLORS.primary + '40',
+  },
+  casePillDone: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
 
   // Status Section
   statusSection: {

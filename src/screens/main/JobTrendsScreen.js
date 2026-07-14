@@ -10,7 +10,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  collection, query, where, orderBy, onSnapshot,
+  collection, query, where, orderBy, onSnapshot, limit,
 } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLLECTIONS } from '../../services/firestorePaths';
@@ -22,6 +22,11 @@ import {
   formatWaitMinutes,
   formatCountdown,
 } from '../../utils/queueWait';
+import FacilityJourneyStepper from '../../components/FacilityJourneyStepper';
+import {
+  getFacilityJourneyPhase,
+  facilityJourneyLabel,
+} from '../../utils/facilityJourney';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -31,21 +36,14 @@ function shortId(uid) {
   return uid ? `NC-${uid.slice(-6).toUpperCase()}` : '—';
 }
 
-function patientStatusLabel(c) {
-  if (!c) return '';
-  if (c.status === 'completed') return 'Visit complete';
-  if (c.patientCalledAt || c.patientNotified) return 'Please come in';
-  if (c.status === 'in_review') return 'Under process';
-  return 'In queue';
-}
-
 function patientStatusMeta(c) {
-  const label = patientStatusLabel(c);
-  if (label === 'Please come in') {
-    return { label, color: '#16A34A', bg: '#DCFCE7', icon: 'notifications' };
+  const phase = getFacilityJourneyPhase(c);
+  const label = facilityJourneyLabel(phase) || 'Waiting';
+  if (phase === 'completed') {
+    return { label, color: '#16A34A', bg: '#DCFCE7', icon: 'checkmark-circle' };
   }
-  if (label === 'Under process') {
-    return { label, color: COLORS.primary, bg: COLORS.primaryVeryLight, icon: 'hourglass' };
+  if (phase === 'attended') {
+    return { label, color: COLORS.primary, bg: COLORS.primaryVeryLight, icon: 'medical' };
   }
   return { label, color: COLORS.medium, bg: COLORS.mediumLight, icon: 'time' };
 }
@@ -60,15 +58,13 @@ function formatWhen(ts) {
 
 /**
  * Wait is patients-ahead only (short nurse slots), never AI "±1 hour" labels.
- * Prefer staff-refreshed estimatedWaitMinutes when sensible; else derive from position.
  */
 function resolveWaitMinutes(activeCase) {
   if (!activeCase) return null;
-  if (activeCase.patientCalledAt || activeCase.patientNotified) return 0;
+  if (getFacilityJourneyPhase(activeCase) !== 'waiting') return 0;
   const ahead = Math.max(0, Number(activeCase.queuePosition || 1) - 1);
   const fromPosition = estimateWaitMinutes(activeCase.priority || 'MEDIUM', ahead);
   const stored = Number(activeCase.estimatedWaitMinutes);
-  // Ignore stale multi-hour values left from old AI strings / bad writes
   if (Number.isFinite(stored) && stored >= 0 && stored <= 40) return stored;
   return fromPosition;
 }
@@ -79,48 +75,6 @@ function remainingSeconds(anchorAt, waitMins, nowMs) {
   if (!anchorAt) return waitMins * 60;
   const endMs = anchorAt + waitMins * 60 * 1000;
   return Math.max(0, Math.round((endMs - nowMs) / 1000));
-}
-
-function journeySteps(activeCase, countdownLabel) {
-  if (!activeCase) return [];
-  const called = !!(activeCase.patientCalledAt || activeCase.patientNotified);
-  const reviewing = activeCase.status === 'in_review' || called;
-  return [
-    {
-      id: 'submitted',
-      title: 'Assessment submitted',
-      detail: activeCase.facilityName
-        ? `Sent to ${activeCase.facilityName}`
-        : 'Sent to your facility',
-      done: true,
-      active: false,
-    },
-    {
-      id: 'queue',
-      title: 'In facility queue',
-      detail: activeCase.queuePosition
-        ? `Position #${activeCase.queuePosition}${countdownLabel ? ` · ${countdownLabel}` : ''}`
-        : 'Waiting for clinical staff',
-      done: reviewing || called,
-      active: activeCase.status === 'queued',
-    },
-    {
-      id: 'process',
-      title: 'Under process',
-      detail: 'Care team is reviewing your assessment',
-      done: called,
-      active: reviewing && !called,
-    },
-    {
-      id: 'call',
-      title: 'Please come in',
-      detail: called
-        ? 'A nurse is ready for you at reception / triage'
-        : 'You will be notified when it is your turn',
-      done: false,
-      active: called,
-    },
-  ];
 }
 
 export default function JobTrendsScreen({ navigation }) {
@@ -155,11 +109,12 @@ export default function JobTrendsScreen({ navigation }) {
       setLoading(false);
       return;
     }
+    // Latest case for this patient (any status) — stays live through Waiting → Attended → Completed
     const q = query(
       collection(firestore, COLLECTIONS.TRIAGE_CASES),
       where('patientId', '==', uid),
-      where('status', 'in', ['queued', 'in_review']),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
+      limit(1)
     );
 
     const unsub = onSnapshot(
@@ -232,7 +187,7 @@ export default function JobTrendsScreen({ navigation }) {
       setWaitAnchor(null);
       return;
     }
-    if (activeCase.patientCalledAt || activeCase.patientNotified) {
+    if (getFacilityJourneyPhase(activeCase) !== 'waiting') {
       setWaitAnchor({ at: Date.now(), mins: 0 });
       return;
     }
@@ -242,10 +197,13 @@ export default function JobTrendsScreen({ navigation }) {
     setWaitAnchor({ at, mins: liveWaitMins });
   }, [
     activeCase?.id,
+    activeCase?.status,
     activeCase?.queuePosition,
     activeCase?.waitUpdatedAt,
     activeCase?.patientCalledAt,
     activeCase?.patientNotified,
+    activeCase?.reviewStartedAt,
+    activeCase?.nurseDecision,
     liveWaitMins,
   ]);
 
@@ -254,10 +212,8 @@ export default function JobTrendsScreen({ navigation }) {
     [waitAnchor, liveWaitMins, nowTick]
   );
   const countdownLabel = formatCountdown(secsLeft);
-  const steps = useMemo(
-    () => journeySteps(displayCase, countdownLabel),
-    [displayCase, countdownLabel]
-  );
+  const journeyPhase = getFacilityJourneyPhase(displayCase);
+  const isLiveVisit = journeyPhase === 'waiting' || journeyPhase === 'attended';
 
   const name = [
     patient?.patientFirstName || patient?.firstName,
@@ -266,8 +222,13 @@ export default function JobTrendsScreen({ navigation }) {
   const age = patient?.patientAge || patient?.age || '—';
   const facility =
     patient?.facilityName || patient?.primaryFacility || 'No facility linked';
-  const totalVisits = history.length + (activeCase ? 1 : 0);
-  const sealedCount = history.length;
+  const totalVisits = history.length + (isLiveVisit ? 1 : 0);
+  const sealedCount = (() => {
+    const ids = new Set(history.map((h) => h.id));
+    let n = history.length;
+    if (activeCase?.status === 'completed' && !ids.has(activeCase.id)) n += 1;
+    return n;
+  })();
 
   const toggleExpand = (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -449,7 +410,8 @@ export default function JobTrendsScreen({ navigation }) {
           <View
             style={[
               styles.activeCard,
-              statusMeta.label === 'Please come in' && styles.activeCardCall,
+              journeyPhase === 'completed' && styles.activeCardCall,
+              journeyPhase === 'attended' && styles.activeCardAttended,
             ]}
           >
             <View style={styles.activeCardHeader}>
@@ -467,78 +429,56 @@ export default function JobTrendsScreen({ navigation }) {
             </View>
 
             <Text style={styles.activeCardTitle}>
-              {statusMeta.label === 'Please come in'
-                ? 'A nurse is ready for you'
-                : statusMeta.label === 'Under process'
-                  ? 'Your assessment is under process'
-                  : 'You are in the facility queue'}
+              {journeyPhase === 'completed'
+                ? 'Your assessment is completed'
+                : journeyPhase === 'attended'
+                  ? 'You are being attended'
+                  : 'You are waiting in the facility queue'}
             </Text>
             <Text style={styles.activeCardSub}>
-              Wait times update from patients ahead of you — with a live countdown.
+              {journeyPhase === 'waiting'
+                ? 'Updates appear here in real time as staff review you on the facility portal.'
+                : journeyPhase === 'attended'
+                  ? 'A healthcare worker has started your review. Stay nearby until you are called.'
+                  : 'Your visit is finished. You can start a new assessment when you need one.'}
             </Text>
 
-            <View style={styles.statsRow}>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>#{displayCase.queuePosition || '—'}</Text>
-                <Text style={styles.statLabel}>Position</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statBox}>
-                <Text style={[styles.statValue, styles.countdownValue]}>
-                  {countdownLabel}
-                </Text>
-                <Text style={styles.statLabel}>Countdown</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statBox}>
-                <Text style={styles.statValueSmall}>
-                  {liveWaitLabel}
-                </Text>
-                <Text style={styles.statLabel}>Est. wait</Text>
-              </View>
-            </View>
-
-            <View style={styles.timeline}>
-              {steps.map((step, index) => (
-                <View key={step.id} style={styles.timelineRow}>
-                  <View style={styles.timelineRail}>
-                    <View
-                      style={[
-                        styles.timelineDot,
-                        step.done && styles.timelineDotDone,
-                        step.active && styles.timelineDotActive,
-                      ]}
-                    />
-                    {index < steps.length - 1 ? (
-                      <View
-                        style={[
-                          styles.timelineLine,
-                          step.done && styles.timelineLineDone,
-                        ]}
-                      />
-                    ) : null}
-                  </View>
-                  <View style={styles.timelineBody}>
-                    <Text
-                      style={[
-                        styles.timelineTitle,
-                        step.active && styles.timelineTitleActive,
-                      ]}
-                    >
-                      {step.title}
-                    </Text>
-                    <Text style={styles.timelineDetail}>{step.detail}</Text>
-                  </View>
+            {journeyPhase === 'waiting' ? (
+              <View style={styles.statsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statValue}>#{displayCase.queuePosition || '—'}</Text>
+                  <Text style={styles.statLabel}>Position</Text>
                 </View>
-              ))}
-            </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statBox}>
+                  <Text style={[styles.statValue, styles.countdownValue]}>
+                    {countdownLabel}
+                  </Text>
+                  <Text style={styles.statLabel}>Countdown</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statBox}>
+                  <Text style={styles.statValueSmall}>
+                    {liveWaitLabel}
+                  </Text>
+                  <Text style={styles.statLabel}>Est. wait</Text>
+                </View>
+              </View>
+            ) : null}
 
-            <View style={styles.tipBox}>
-              <Ionicons name="information-circle-outline" size={16} color={COLORS.primary} />
-              <Text style={styles.tipText}>
-                If your condition worsens while waiting, tell triage staff immediately.
-              </Text>
-            </View>
+            <FacilityJourneyStepper
+              caseData={displayCase}
+              countdownLabel={journeyPhase === 'waiting' ? countdownLabel : ''}
+            />
+
+            {journeyPhase !== 'completed' ? (
+              <View style={styles.tipBox}>
+                <Ionicons name="information-circle-outline" size={16} color={COLORS.primary} />
+                <Text style={styles.tipText}>
+                  If your condition worsens while waiting, tell triage staff immediately.
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : (
           <View style={styles.emptyCard}>
@@ -711,6 +651,7 @@ const styles = StyleSheet.create({
     borderLeftColor: COLORS.primary,
   },
   activeCardCall: { borderLeftColor: '#16A34A' },
+  activeCardAttended: { borderLeftColor: COLORS.primary },
   activeCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -758,44 +699,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   statDivider: { width: 1, height: 40, backgroundColor: COLORS.borderLight },
-
-  timeline: { marginBottom: 14 },
-  timelineRow: { flexDirection: 'row', gap: 12 },
-  timelineRail: { width: 16, alignItems: 'center' },
-  timelineDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: COLORS.borderLight,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-  },
-  timelineDotDone: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  timelineDotActive: {
-    backgroundColor: '#16A34A',
-    borderColor: '#16A34A',
-  },
-  timelineLine: {
-    width: 2,
-    flex: 1,
-    minHeight: 28,
-    backgroundColor: COLORS.borderLight,
-    marginVertical: 2,
-  },
-  timelineLineDone: { backgroundColor: COLORS.primaryGlow || '#BFDBFE' },
-  timelineBody: { flex: 1, paddingBottom: 14 },
-  timelineTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-  timelineTitleActive: { color: COLORS.textPrimary },
-  timelineDetail: {
-    fontSize: 12,
-    color: COLORS.textTertiary,
-    marginTop: 2,
-    lineHeight: 17,
-  },
 
   tipBox: {
     flexDirection: 'row',
