@@ -362,8 +362,14 @@ export default function ChatConversationScreen({ route, navigation }) {
     // If backend tool write failed, persist sealed clinical fields from the server once
     if (!resolvedId && fallbackFields && auth.currentUser?.uid) {
       try {
+        const {
+          createdAt: _c,
+          waitUpdatedAt: _w,
+          ...safeFields
+        } = fallbackFields;
         const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
-          ...fallbackFields,
+          ...safeFields,
+          source: safeFields.source || 'ai_interview',
           createdAt: serverTimestamp(),
           waitUpdatedAt: serverTimestamp(),
         });

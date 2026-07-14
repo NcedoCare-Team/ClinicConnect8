@@ -302,15 +302,18 @@ def _execute_submit_triage(binding, args, conversation_id, id_token):
         "riskScore": risk_score,
         "confidence": confidence,
         "reasoning": args.get("reasoning") or "",
+        "aiReasoning": args.get("reasoning") or "",
         "riskIndicators": args.get("risk_indicators") or args.get("riskIndicators") or [],
         "recommendedAction": args.get("recommended_action") or args.get("recommendedAction") or "",
         "estimatedWaitMinutes": wait_mins,
         "estimatedWait": wait_label,
         "queuePosition": ahead + 1,
-        "source": "ai_function_call",
+        "source": "ai_interview",
+        "aiPipeline": "gemini_function_calling",
         "conversationId": conversation_id,
         "status": "queued",
         "createdAt": datetime.utcnow().isoformat() + "Z",
+        "waitUpdatedAt": datetime.utcnow().isoformat() + "Z",
     }
 
     case_id, err = _firestore_create_triage_case(id_token, fields)
