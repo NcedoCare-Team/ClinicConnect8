@@ -1,5 +1,5 @@
-// src/screens/main/JobTrendsScreen.js — Care Journey (live queue + visit history)
-// Patients never see triage colour codes. They see journey updates and visit history.
+// Care Journey — summary + past visits, then live queue journey with countdown.
+// Patients never see triage colour codes.
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -15,9 +15,20 @@ import {
 import { auth, firestore } from '../../../firebase';
 import { COLLECTIONS } from '../../services/firestorePaths';
 import { COLORS } from '../../constants/colors';
+import { SessionService } from '../../services/SessionService';
+import { UserProfileService } from '../../services/UserProfileService';
+import {
+  estimateWaitMinutes,
+  formatWaitMinutes,
+  formatCountdown,
+} from '../../utils/queueWait';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+function shortId(uid) {
+  return uid ? `NC-${uid.slice(-6).toUpperCase()}` : '—';
 }
 
 function patientStatusLabel(c) {
@@ -36,9 +47,6 @@ function patientStatusMeta(c) {
   if (label === 'Under process') {
     return { label, color: COLORS.primary, bg: COLORS.primaryVeryLight, icon: 'hourglass' };
   }
-  if (label === 'Visit complete') {
-    return { label, color: COLORS.low, bg: COLORS.lowLight, icon: 'checkmark-circle' };
-  }
   return { label, color: COLORS.medium, bg: COLORS.mediumLight, icon: 'time' };
 }
 
@@ -50,7 +58,30 @@ function formatWhen(ts) {
   });
 }
 
-function journeySteps(activeCase) {
+/**
+ * Wait is patients-ahead only (short nurse slots), never AI "±1 hour" labels.
+ * Prefer staff-refreshed estimatedWaitMinutes when sensible; else derive from position.
+ */
+function resolveWaitMinutes(activeCase) {
+  if (!activeCase) return null;
+  if (activeCase.patientCalledAt || activeCase.patientNotified) return 0;
+  const ahead = Math.max(0, Number(activeCase.queuePosition || 1) - 1);
+  const fromPosition = estimateWaitMinutes(activeCase.priority || 'MEDIUM', ahead);
+  const stored = Number(activeCase.estimatedWaitMinutes);
+  // Ignore stale multi-hour values left from old AI strings / bad writes
+  if (Number.isFinite(stored) && stored >= 0 && stored <= 40) return stored;
+  return fromPosition;
+}
+
+function remainingSeconds(anchorAt, waitMins, nowMs) {
+  if (waitMins == null) return null;
+  if (waitMins <= 0) return 0;
+  if (!anchorAt) return waitMins * 60;
+  const endMs = anchorAt + waitMins * 60 * 1000;
+  return Math.max(0, Math.round((endMs - nowMs) / 1000));
+}
+
+function journeySteps(activeCase, countdownLabel) {
   if (!activeCase) return [];
   const called = !!(activeCase.patientCalledAt || activeCase.patientNotified);
   const reviewing = activeCase.status === 'in_review' || called;
@@ -68,7 +99,7 @@ function journeySteps(activeCase) {
       id: 'queue',
       title: 'In facility queue',
       detail: activeCase.queuePosition
-        ? `Position #${activeCase.queuePosition}${activeCase.estimatedWait ? ` · Est. ${activeCase.estimatedWait}` : ''}`
+        ? `Position #${activeCase.queuePosition}${countdownLabel ? ` · ${countdownLabel}` : ''}`
         : 'Waiting for clinical staff',
       done: reviewing || called,
       active: activeCase.status === 'queued',
@@ -99,10 +130,26 @@ export default function JobTrendsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [patient, setPatient] = useState(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const [waitAnchor, setWaitAnchor] = useState(null); // { at, mins }
 
   const uid = auth.currentUser?.uid;
 
-  // Live active journey
+  useEffect(() => {
+    (async () => {
+      const profile = await UserProfileService.getProfile();
+      const session = SessionService.getSession();
+      setPatient({ ...profile, ...session });
+    })();
+  }, []);
+
+  // Countdown tick
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     if (!uid) {
       setLoading(false);
@@ -139,7 +186,6 @@ export default function JobTrendsScreen({ navigation }) {
     return unsub;
   }, [uid]);
 
-  // Live visit history (auto-updates when a visit completes)
   useEffect(() => {
     if (!uid) return;
     const q = query(
@@ -165,12 +211,63 @@ export default function JobTrendsScreen({ navigation }) {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // Listeners keep state live; brief spinner for user feedback
     setTimeout(() => setRefreshing(false), 600);
   }, []);
 
   const statusMeta = activeCase ? patientStatusMeta(activeCase) : null;
-  const steps = useMemo(() => journeySteps(activeCase), [activeCase]);
+  const liveWaitMins = useMemo(() => resolveWaitMinutes(activeCase), [activeCase]);
+  const liveWaitLabel = liveWaitMins == null ? '—' : formatWaitMinutes(liveWaitMins);
+  const displayCase = useMemo(() => {
+    if (!activeCase) return null;
+    return {
+      ...activeCase,
+      estimatedWaitMinutes: liveWaitMins,
+      estimatedWait: liveWaitLabel,
+    };
+  }, [activeCase, liveWaitMins, liveWaitLabel]);
+
+  // Re-anchor countdown when position / wait estimate changes (or stamp is stale)
+  useEffect(() => {
+    if (!activeCase || liveWaitMins == null) {
+      setWaitAnchor(null);
+      return;
+    }
+    if (activeCase.patientCalledAt || activeCase.patientNotified) {
+      setWaitAnchor({ at: Date.now(), mins: 0 });
+      return;
+    }
+    const stamp = activeCase.waitUpdatedAt?.toMillis?.();
+    const endFromStamp = stamp != null ? stamp + liveWaitMins * 60 * 1000 : 0;
+    const at = stamp && endFromStamp > Date.now() ? stamp : Date.now();
+    setWaitAnchor({ at, mins: liveWaitMins });
+  }, [
+    activeCase?.id,
+    activeCase?.queuePosition,
+    activeCase?.waitUpdatedAt,
+    activeCase?.patientCalledAt,
+    activeCase?.patientNotified,
+    liveWaitMins,
+  ]);
+
+  const secsLeft = useMemo(
+    () => remainingSeconds(waitAnchor?.at, waitAnchor?.mins ?? liveWaitMins, nowTick),
+    [waitAnchor, liveWaitMins, nowTick]
+  );
+  const countdownLabel = formatCountdown(secsLeft);
+  const steps = useMemo(
+    () => journeySteps(displayCase, countdownLabel),
+    [displayCase, countdownLabel]
+  );
+
+  const name = [
+    patient?.patientFirstName || patient?.firstName,
+    patient?.patientSurname || patient?.lastName,
+  ].filter(Boolean).join(' ') || patient?.displayName || 'Patient';
+  const age = patient?.patientAge || patient?.age || '—';
+  const facility =
+    patient?.facilityName || patient?.primaryFacility || 'No facility linked';
+  const totalVisits = history.length + (activeCase ? 1 : 0);
+  const sealedCount = history.length;
 
   const toggleExpand = (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -189,7 +286,7 @@ export default function JobTrendsScreen({ navigation }) {
       >
         <Text style={styles.headerTitle}>My care journey</Text>
         <Text style={styles.headerSub}>
-          Live queue updates and a full history of every visit
+          Visit history and live queue updates in one place
         </Text>
       </LinearGradient>
 
@@ -211,15 +308,148 @@ export default function JobTrendsScreen({ navigation }) {
           </View>
         ) : null}
 
-        {loading ? (
+        {/* ── Summary card ── */}
+        <LinearGradient
+          colors={[COLORS.primaryDark, COLORS.primary]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.summaryCard}
+        >
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryAvatar}>
+              <Ionicons name="person" size={26} color={COLORS.primary} />
+            </View>
+            <View style={styles.summaryMeta}>
+              <Text style={styles.summaryName}>{name}</Text>
+              <Text style={styles.summarySub}>
+                Age {age} · {shortId(uid)}
+              </Text>
+            </View>
+            <View style={styles.fileBadge}>
+              <Ionicons name="document-text" size={12} color="#FFFFFF" />
+              <Text style={styles.fileBadgeText}>PATIENT FILE</Text>
+            </View>
+          </View>
+
+          <View style={styles.summaryDivider} />
+
+          <View style={styles.facilityRow}>
+            <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.75)" />
+            <Text style={styles.facilityText} numberOfLines={1}>{facility}</Text>
+          </View>
+
+          <View style={styles.summaryStats}>
+            <View style={styles.summaryStat}>
+              <Text style={styles.summaryStatVal}>{totalVisits}</Text>
+              <Text style={styles.summaryStatLbl}>Total</Text>
+            </View>
+            <View style={styles.summaryStatDiv} />
+            <View style={styles.summaryStat}>
+              <Text style={styles.summaryStatVal}>{activeCase ? 1 : 0}</Text>
+              <Text style={styles.summaryStatLbl}>Active</Text>
+            </View>
+            <View style={styles.summaryStatDiv} />
+            <View style={styles.summaryStat}>
+              <Text style={styles.summaryStatVal}>{sealedCount}</Text>
+              <Text style={styles.summaryStatLbl}>Completed</Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* ── Past visits ── */}
+        <Text style={styles.sectionTitle}>Past visits</Text>
+        {loading && history.length === 0 && !activeCase ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={COLORS.primary} size="large" />
           </View>
-        ) : activeCase ? (
+        ) : history.length === 0 ? (
+          <View style={styles.historyEmpty}>
+            <Text style={styles.historyEmptyText}>
+              Completed visits will appear here with your care plan summary.
+            </Text>
+          </View>
+        ) : (
+          history.map((item) => {
+            const open = expandedId === item.id;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.historyCard}
+                onPress={() => toggleExpand(item.id)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.historyTop}>
+                  <View style={[styles.historyDot, { backgroundColor: COLORS.primary }]} />
+                  <View style={styles.historyInfo}>
+                    <Text style={styles.historyDate}>
+                      {formatWhen(item.completedAt) || 'Completed visit'}
+                    </Text>
+                    <Text style={styles.historyDiagnosis} numberOfLines={open ? 0 : 2}>
+                      {item.doctorConclusion ||
+                        item.diagnosis ||
+                        item.chiefComplaint ||
+                        'Consultation completed'}
+                    </Text>
+                    {item.facilityName ? (
+                      <Text style={styles.historyNurse}>{item.facilityName}</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.historyRight}>
+                    <View style={[styles.smallBadge, { backgroundColor: COLORS.primaryVeryLight }]}>
+                      <Text style={[styles.smallBadgeText, { color: COLORS.primary }]}>Done</Text>
+                    </View>
+                    <Ionicons
+                      name={open ? 'chevron-up' : 'chevron-down'}
+                      size={16}
+                      color={COLORS.textTertiary}
+                      style={{ marginTop: 8 }}
+                    />
+                  </View>
+                </View>
+
+                {open ? (
+                  <View style={styles.historyExpand}>
+                    {(item.doctorConclusion || item.diagnosis) && (
+                      <View style={styles.detailBlock}>
+                        <Text style={styles.detailLabel}>Clinical conclusion</Text>
+                        <Text style={styles.detailValue}>
+                          {item.doctorConclusion || item.diagnosis}
+                        </Text>
+                      </View>
+                    )}
+                    {item.medications ? (
+                      <View style={styles.detailBlock}>
+                        <Text style={styles.detailLabel}>Medications</Text>
+                        <Text style={styles.detailValue}>{item.medications}</Text>
+                      </View>
+                    ) : null}
+                    {item.guidelines ? (
+                      <View style={styles.detailBlock}>
+                        <Text style={styles.detailLabel}>Guidelines & follow-up</Text>
+                        <Text style={styles.detailValue}>{item.guidelines}</Text>
+                      </View>
+                    ) : null}
+                    {item.symptoms ? (
+                      <View style={styles.detailBlock}>
+                        <Text style={styles.detailLabel}>Reported symptoms</Text>
+                        <Text style={styles.detailValue}>{item.symptoms}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            );
+          })
+        )}
+
+        {/* ── Live journey (under history) ── */}
+        <Text style={[styles.sectionTitle, { marginTop: 22 }]}>Live journey</Text>
+
+        {displayCase && statusMeta ? (
           <View
             style={[
               styles.activeCard,
-              statusMeta?.label === 'Please come in' && styles.activeCardCall,
+              statusMeta.label === 'Please come in' && styles.activeCardCall,
             ]}
           >
             <View style={styles.activeCardHeader}>
@@ -229,9 +459,9 @@ export default function JobTrendsScreen({ navigation }) {
                   {statusMeta.label}
                 </Text>
               </View>
-              {activeCase.facilityName ? (
+              {displayCase.facilityName ? (
                 <Text style={styles.facilityChip} numberOfLines={1}>
-                  {activeCase.facilityName}
+                  {displayCase.facilityName}
                 </Text>
               ) : null}
             </View>
@@ -244,24 +474,30 @@ export default function JobTrendsScreen({ navigation }) {
                   : 'You are in the facility queue'}
             </Text>
             <Text style={styles.activeCardSub}>
-              {statusMeta.label === 'Please come in'
-                ? 'Please proceed to the triage / reception area now.'
-                : 'Wait times update as emergencies and other patients are prioritised. Clinical triage details stay with the care team.'}
+              Wait times update from patients ahead of you — with a live countdown.
             </Text>
 
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
-                <Text style={styles.statValue}>#{activeCase.queuePosition || '—'}</Text>
+                <Text style={styles.statValue}>#{displayCase.queuePosition || '—'}</Text>
                 <Text style={styles.statLabel}>Position</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statBox}>
-                <Text style={styles.statValue}>{activeCase.estimatedWait || '—'}</Text>
-                <Text style={styles.statLabel}>Est. Wait</Text>
+                <Text style={[styles.statValue, styles.countdownValue]}>
+                  {countdownLabel}
+                </Text>
+                <Text style={styles.statLabel}>Countdown</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statBox}>
+                <Text style={styles.statValueSmall}>
+                  {liveWaitLabel}
+                </Text>
+                <Text style={styles.statLabel}>Est. wait</Text>
               </View>
             </View>
 
-            {/* Journey timeline */}
             <View style={styles.timeline}>
               {steps.map((step, index) => (
                 <View key={step.id} style={styles.timelineRow}>
@@ -306,10 +542,10 @@ export default function JobTrendsScreen({ navigation }) {
           </View>
         ) : (
           <View style={styles.emptyCard}>
-            <Ionicons name="git-network-outline" size={48} color={COLORS.textTertiary} />
+            <Ionicons name="git-network-outline" size={40} color={COLORS.textTertiary} />
             <Text style={styles.emptyTitle}>No active journey</Text>
             <Text style={styles.emptySub}>
-              Start an assessment and your live queue status will appear here.
+              Start an assessment and your live queue countdown will appear here.
             </Text>
             <TouchableOpacity
               style={styles.startBtn}
@@ -324,97 +560,6 @@ export default function JobTrendsScreen({ navigation }) {
           </View>
         )}
 
-        <Text style={styles.sectionTitle}>Visit history</Text>
-        {history.length === 0 ? (
-          <View style={styles.historyEmpty}>
-            <Text style={styles.historyEmptyText}>
-              Completed visits will show here with your care plan summary.
-            </Text>
-          </View>
-        ) : (
-          history.map((item) => {
-            const open = expandedId === item.id;
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.historyCard}
-                onPress={() => toggleExpand(item.id)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.historyTop}>
-                  <View style={[styles.historyDot, { backgroundColor: COLORS.primary }]} />
-                  <View style={styles.historyInfo}>
-                    <Text style={styles.historyDate}>
-                      {formatWhen(item.completedAt) || 'Completed visit'}
-                    </Text>
-                    <Text style={styles.historyDiagnosis} numberOfLines={open ? 0 : 2}>
-                      {item.doctorConclusion ||
-                        item.diagnosis ||
-                        item.chiefComplaint ||
-                        'Consultation completed'}
-                    </Text>
-                    {item.facilityName ? (
-                      <Text style={styles.historyNurse}>{item.facilityName}</Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.historyRight}>
-                    <View
-                      style={[styles.smallBadge, { backgroundColor: COLORS.primaryVeryLight }]}
-                    >
-                      <Text style={[styles.smallBadgeText, { color: COLORS.primary }]}>
-                        Done
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name={open ? 'chevron-up' : 'chevron-down'}
-                      size={16}
-                      color={COLORS.textTertiary}
-                      style={{ marginTop: 8 }}
-                    />
-                  </View>
-                </View>
-
-                {open ? (
-                  <View style={styles.historyExpand}>
-                    {(item.doctorConclusion || item.diagnosis) && (
-                      <View style={styles.detailBlock}>
-                        <Text style={styles.detailLabel}>Clinical conclusion</Text>
-                        <Text style={styles.detailValue}>
-                          {item.doctorConclusion || item.diagnosis}
-                        </Text>
-                      </View>
-                    )}
-                    {item.medications ? (
-                      <View style={styles.detailBlock}>
-                        <Text style={styles.detailLabel}>Medications</Text>
-                        <Text style={styles.detailValue}>{item.medications}</Text>
-                      </View>
-                    ) : null}
-                    {item.guidelines ? (
-                      <View style={styles.detailBlock}>
-                        <Text style={styles.detailLabel}>Guidelines & follow-up</Text>
-                        <Text style={styles.detailValue}>{item.guidelines}</Text>
-                      </View>
-                    ) : null}
-                    {item.symptoms ? (
-                      <View style={styles.detailBlock}>
-                        <Text style={styles.detailLabel}>Reported symptoms</Text>
-                        <Text style={styles.detailValue}>{item.symptoms}</Text>
-                      </View>
-                    ) : null}
-                    {(item.doctorReviewedByName || item.reviewedByName) && (
-                      <Text style={styles.historyMeta}>
-                        Recorded by{' '}
-                        {item.doctorReviewedByName || item.reviewedByName}
-                      </Text>
-                    )}
-                  </View>
-                ) : null}
-              </TouchableOpacity>
-            );
-          })
-        )}
-
         <View style={{ height: 120 }} />
       </ScrollView>
     </View>
@@ -426,7 +571,7 @@ const styles = StyleSheet.create({
 
   header: {
     paddingTop: Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight || 0) + 20,
-    paddingBottom: 24,
+    paddingBottom: 20,
     paddingHorizontal: 24,
   },
   headerTitle: {
@@ -441,8 +586,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  scroll: { paddingTop: 20, paddingHorizontal: 20 },
-  loadingWrap: { paddingTop: 60, alignItems: 'center' },
+  scroll: { paddingTop: 16, paddingHorizontal: 20 },
+  loadingWrap: { paddingTop: 40, alignItems: 'center' },
 
   errorCard: {
     flexDirection: 'row',
@@ -457,6 +602,106 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 18 },
 
+  summaryCard: {
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  summaryAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryMeta: { flex: 1 },
+  summaryName: { fontSize: 17, fontWeight: '800', color: COLORS.white },
+  summarySub: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  fileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  fileBadgeText: { fontSize: 9, fontWeight: '800', color: COLORS.white, letterSpacing: 0.4 },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    marginVertical: 14,
+  },
+  facilityRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 },
+  facilityText: { flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  summaryStats: { flexDirection: 'row', alignItems: 'center' },
+  summaryStat: { flex: 1, alignItems: 'center' },
+  summaryStatVal: { fontSize: 22, fontWeight: '900', color: COLORS.white },
+  summaryStatLbl: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+  summaryStatDiv: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
+
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 12,
+  },
+
+  historyEmpty: {
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    marginBottom: 10,
+  },
+  historyEmptyText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  historyCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  historyTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  historyDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0, marginTop: 4 },
+  historyInfo: { flex: 1 },
+  historyRight: { alignItems: 'flex-end' },
+  historyDate: {
+    fontSize: 11,
+    color: COLORS.textTertiary,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  historyDiagnosis: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary },
+  historyNurse: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
+  smallBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  smallBadgeText: { fontSize: 10, fontWeight: '700' },
+  historyExpand: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+    gap: 10,
+  },
+  detailBlock: { gap: 2 },
+  detailLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  detailValue: { fontSize: 13, color: COLORS.textPrimary, lineHeight: 19 },
+
   activeCard: {
     backgroundColor: COLORS.white,
     borderRadius: 18,
@@ -464,15 +709,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderLeftWidth: 5,
     borderLeftColor: COLORS.primary,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.09,
-        shadowRadius: 12,
-      },
-      android: { elevation: 4 },
-    }),
   },
   activeCardCall: { borderLeftColor: '#16A34A' },
   activeCardHeader: {
@@ -497,7 +733,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textTertiary,
   },
-
   activeCardTitle: {
     fontSize: 17,
     fontWeight: '800',
@@ -513,9 +748,11 @@ const styles = StyleSheet.create({
 
   statsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
   statBox: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 28, fontWeight: '900', color: COLORS.textPrimary },
+  statValue: { fontSize: 26, fontWeight: '900', color: COLORS.textPrimary },
+  countdownValue: { fontVariant: ['tabular-nums'], color: COLORS.primary },
+  statValueSmall: { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     color: COLORS.textTertiary,
     marginTop: 2,
@@ -537,7 +774,6 @@ const styles = StyleSheet.create({
   timelineDotActive: {
     backgroundColor: '#16A34A',
     borderColor: '#16A34A',
-    transform: [{ scale: 1.15 }],
   },
   timelineLine: {
     width: 2,
@@ -574,7 +810,7 @@ const styles = StyleSheet.create({
   emptyCard: {
     backgroundColor: COLORS.white,
     borderRadius: 18,
-    padding: 32,
+    padding: 28,
     alignItems: 'center',
     gap: 10,
     marginBottom: 24,
@@ -595,72 +831,4 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   startBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
-
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 12,
-  },
-  historyEmpty: {
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    marginBottom: 10,
-  },
-  historyEmptyText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-  },
-  historyCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 6,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  historyTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  historyDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0, marginTop: 4 },
-  historyInfo: { flex: 1 },
-  historyRight: { alignItems: 'flex-end' },
-  historyDate: {
-    fontSize: 11,
-    color: COLORS.textTertiary,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  historyDiagnosis: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary },
-  historyNurse: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
-  smallBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  smallBadgeText: { fontSize: 10, fontWeight: '700' },
-  historyExpand: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderLight,
-    gap: 10,
-  },
-  detailBlock: { gap: 2 },
-  detailLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  detailValue: { fontSize: 13, color: COLORS.textPrimary, lineHeight: 19 },
-  historyMeta: { fontSize: 11, color: COLORS.textTertiary, marginTop: 2 },
 });

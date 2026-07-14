@@ -14,13 +14,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, onSnapshot, serverTimestamp, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
 import { COLLECTIONS } from '../../services/firestorePaths';
 import ApiService from '../../services/ApiService';
 import { ChatStorageService } from '../../services/ChatStorageService';
 import { SessionService } from '../../services/SessionService';
+import { estimateWaitMinutes, formatWaitMinutes, sortQueueByUrgency } from '../../utils/queueWait';
 import MessageBubble from './components/MessageBubble';
 import ChatInput from './components/ChatInput';
 
@@ -350,10 +351,33 @@ export default function ChatConversationScreen({ route, navigation }) {
     const session = SessionService.getSession();
     const uid = auth.currentUser?.uid;
     let caseId = null;
+    let waitMins = estimateWaitMinutes(triage.priority || 'MEDIUM', 0);
 
     if (uid) {
       try {
         const aiPriority = triage.priority || 'MEDIUM';
+        // Count facility queue so wait is based on patients ahead — never AI "1 hour" guesses
+        let aheadCount = 0;
+        try {
+          if (session?.facilityId) {
+            const q = query(
+              collection(firestore, COLLECTIONS.TRIAGE_CASES),
+              where('facilityId', '==', session.facilityId),
+              orderBy('createdAt', 'desc')
+            );
+            const snap = await getDocs(q);
+            const active = sortQueueByUrgency(
+              snap.docs
+                .map((d) => ({ id: d.id, ...d.data() }))
+                .filter((c) => c.status === 'queued' || c.status === 'in_review')
+            );
+            aheadCount = active.length; // new case joins after current queue
+          }
+        } catch (e) {
+          console.log('[Triage] queue count skipped:', e.message);
+        }
+        waitMins = estimateWaitMinutes(aiPriority, aheadCount);
+        const waitLabel = formatWaitMinutes(waitMins);
         const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
           patientId: uid,
           patientName: [session?.patientFirstName, session?.patientSurname].filter(Boolean).join(' '),
@@ -368,7 +392,10 @@ export default function ChatConversationScreen({ route, navigation }) {
           reasoning: triage.reasoning || '',
           riskIndicators: triage.riskIndicators || [],
           recommendedAction: triage.recommendedAction || '',
-          estimatedWait: triage.estimatedWait || '',
+          estimatedWaitMinutes: waitMins,
+          estimatedWait: waitLabel,
+          queuePosition: aheadCount + 1,
+          waitUpdatedAt: serverTimestamp(),
           source: 'ai_interview',
           conversationId: currentConvId,
           status: 'queued',
@@ -424,7 +451,7 @@ export default function ChatConversationScreen({ route, navigation }) {
       reasoning: triage.reasoning,
       riskIndicators: triage.riskIndicators,
       recommendedAction: triage.recommendedAction,
-      estimatedWait: triage.estimatedWait,
+      estimatedWait: formatWaitMinutes(waitMins),
       symptoms: (triage.symptomsSummary || '').slice(0, 400),
       caseId,
     });
