@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { COLORS } from '../../constants/colors';
 import { openPatientTab } from '../../navigation/openPatientTab';
 
@@ -59,7 +60,9 @@ const PRIORITY_CONFIG = {
   },
 };
 
-export default function TriageResultScreen({ navigation, route }) {
+export default function TriageResultScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
   const {
     priority = 'LOW',
     riskScore,

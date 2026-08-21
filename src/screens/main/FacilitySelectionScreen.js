@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';      
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { useNavigation } from '@react-navigation/native';
 import { replacePatientTab } from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
 
@@ -182,7 +183,8 @@ function parseNominatimResults(allPlaces, userLat, userLng) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function FacilitySelectionScreen({ navigation }) {
+export default function FacilitySelectionScreen() {
+  const navigation = useNavigation();
   const [locationStatus, setLocationStatus] = useState('loading');
   const [userLocation,   setUserLocation]   = useState(null);
   const [facilities,     setFacilities]     = useState([]);

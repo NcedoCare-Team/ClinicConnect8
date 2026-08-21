@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, firestore } from '../../../firebase';
 import { setDoc, getDoc } from 'firebase/firestore';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { replacePatientTab } from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
@@ -29,8 +30,10 @@ const TYPE_COLOR = {
   doctor:   ['#5B21B6', '#7C3AED', '#A78BFA'],
 };
 
-export default function FacilityWelcomeScreen({ navigation, route }) {
-  const { facility } = route.params || {};
+export default function FacilityWelcomeScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { facility } = route?.params || {};
   const { setFacilitySession } = useFacility();
 
   const facilityName      = facility?.name     || 'Healthcare Facility';

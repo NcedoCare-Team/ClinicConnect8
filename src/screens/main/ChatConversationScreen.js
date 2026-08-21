@@ -13,6 +13,7 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
@@ -30,7 +31,9 @@ import {
   facilityJourneyNotice,
 } from '../../utils/facilityJourney';
 
-export default function ChatConversationScreen({ route, navigation }) {
+export default function ChatConversationScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
   const { conversationId: initialConversationId, conversationTitle: initialTitle } = route.params || {};
   
   const [messages, setMessages] = useState([]);

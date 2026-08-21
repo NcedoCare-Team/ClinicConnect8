@@ -5,7 +5,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Alert,
   ScrollView, StatusBar, useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
@@ -55,7 +55,8 @@ function AssessmentHeader() {
   );
 }
 
-export default function SmartChatScreen({ navigation }) {
+export default function SmartChatScreen() {
+  const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width - LAYOUT.screenPadding * 2, 420);
   const { hasFacility, facilityName, ready } = useFacility();
