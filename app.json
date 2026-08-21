@@ -5,7 +5,8 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "scheme": "ncedocare",
     "newArchEnabled": false,
     "splash": {
       "image": "./assets/logo.png",
@@ -49,7 +50,8 @@
           "photosPermission": "NcedoCare needs photo library access so you can upload documents or reports."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-router"
     ]
   }
 }

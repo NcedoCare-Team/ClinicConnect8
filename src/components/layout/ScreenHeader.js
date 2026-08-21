@@ -144,7 +144,7 @@ export function ProfileHeader({ displayName, facility, avatarUri, onAvatarPress 
 
 export const LAYOUT = {
   screenPadding: 20,
-  bottomTabClearance: 118,
+  bottomTabClearance: 108,
   cardRadius: 16,
 };
 

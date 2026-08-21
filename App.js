@@ -1,16 +1,6 @@
-import React from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { ChatProvider } from './src/contexts/ChatContext';
-import { FacilityProvider } from './src/contexts/FacilityContext';
-import AppNavigator from './src/navigation/AppNavigator';
+// Legacy entry — the app boots via expo-router/entry (see package.json "main").
+// Providers and navigation live in app/_layout.js.
 
 export default function App() {
-  return (
-    <ChatProvider>
-      <FacilityProvider>
-        <StatusBar style="auto" />
-        <AppNavigator />
-      </FacilityProvider>
-    </ChatProvider>
-  );
+  return null;
 }

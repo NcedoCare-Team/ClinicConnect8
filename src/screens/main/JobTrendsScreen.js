@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Platform, StatusBar, ScrollView, ActivityIndicator, RefreshControl,
+  Platform, ScrollView, ActivityIndicator, RefreshControl,
   LayoutAnimation, UIManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +15,7 @@ import {
 import { auth, firestore } from '../../../firebase';
 import { COLLECTIONS } from '../../services/firestorePaths';
 import { COLORS } from '../../constants/colors';
+import { ScreenHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 import { SessionService } from '../../services/SessionService';
 import { UserProfileService } from '../../services/UserProfileService';
 import {
@@ -23,6 +24,7 @@ import {
   formatCountdown,
 } from '../../utils/queueWait';
 import FacilityJourneyStepper from '../../components/FacilityJourneyStepper';
+import { openPatientTab } from '../../navigation/openPatientTab';
 import {
   getFacilityJourneyPhase,
   facilityJourneyLabel,
@@ -237,19 +239,10 @@ export default function JobTrendsScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} translucent />
-
-      <LinearGradient
-        colors={[COLORS.primaryDark, COLORS.primary]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
-      >
-        <Text style={styles.headerTitle}>My care journey</Text>
-        <Text style={styles.headerSub}>
-          Visit history and live queue updates in one place
-        </Text>
-      </LinearGradient>
+      <ScreenHeader
+        title="My Care Journey"
+        subtitle="Visit history and live queue updates in one place"
+      />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -489,10 +482,7 @@ export default function JobTrendsScreen({ navigation }) {
             </Text>
             <TouchableOpacity
               style={styles.startBtn}
-              onPress={() =>
-                navigation.getParent?.()?.jumpTo('assessment') ||
-                navigation.navigate('Main', { tab: 'assessment' })
-              }
+              onPress={() => openPatientTab('assessment')}
               activeOpacity={0.85}
             >
               <Text style={styles.startBtnText}>Check Symptoms</Text>
@@ -500,7 +490,7 @@ export default function JobTrendsScreen({ navigation }) {
           </View>
         )}
 
-        <View style={{ height: 120 }} />
+        <View style={{ height: LAYOUT.bottomTabClearance }} />
       </ScrollView>
     </View>
   );
@@ -509,24 +499,7 @@ export default function JobTrendsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
 
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight || 0) + 20,
-    paddingBottom: 20,
-    paddingHorizontal: 24,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: COLORS.white,
-    letterSpacing: -0.5,
-  },
-  headerSub: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.70)',
-    marginTop: 4,
-  },
-
-  scroll: { paddingTop: 16, paddingHorizontal: 20 },
+  scroll: { paddingTop: 16, paddingHorizontal: LAYOUT.screenPadding },
   loadingWrap: { paddingTop: 40, alignItems: 'center' },
 
   errorCard: {

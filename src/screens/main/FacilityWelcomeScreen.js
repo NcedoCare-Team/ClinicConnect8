@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, firestore } from '../../../firebase';
 import { setDoc, getDoc } from 'firebase/firestore';
+import { replacePatientTab } from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
 import { useFacility } from '../../contexts/FacilityContext';
@@ -109,10 +110,7 @@ export default function FacilityWelcomeScreen({ navigation, route }) {
         }
       }
 
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main', params: nextTab === 'assessment' ? { tab: 'assessment' } : { tab: 'home' } }],
-      });
+      replacePatientTab(nextTab === 'assessment' ? 'assessment' : 'home');
     } catch (err) {
       console.log('Facility save error:', err);
     } finally {

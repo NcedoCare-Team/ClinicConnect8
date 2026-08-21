@@ -19,6 +19,7 @@ import { HomeHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 import FacilityBanner from '../../components/layout/FacilityBanner';
 import InsightCard from '../../components/insights/InsightCard';
 import { SessionService } from '../../services/SessionService';
+import { openPatientTab, openFacilitySelection } from '../../navigation/openPatientTab';
 import { SleepTrackingService } from '../../services/SleepTrackingService';
 import { useFacility } from '../../contexts/FacilityContext';
 import {
@@ -119,14 +120,14 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const handleChangeFacility = () => {
-    navigation.navigate('FacilitySelection');
+    openFacilitySelection();
   };
 
   // const handleNotifications = () => {
   //   Alert.alert('Notifications', 'Your care updates and reminders will appear here.');
   // };
 
-  const goToInsights = () => navigation.getParent()?.jumpTo('insights');
+  const goToInsights = () => openPatientTab('insights');
 
   const facilityDisplay = facility || '';
 
@@ -180,7 +181,7 @@ export default function HomeScreen({ navigation }) {
           <TouchableOpacity
             style={styles.statTile}
             activeOpacity={0.8}
-            onPress={() => navigation.navigate('FacilitySelection')}>
+            onPress={openFacilitySelection}>
             <View style={[styles.statIcon, {
               backgroundColor: healthData?.deviceConnected ? COLORS.lowLight : COLORS.infoLight,
             }]}>
@@ -204,7 +205,7 @@ export default function HomeScreen({ navigation }) {
         {/* Primary Action Card — before Care Timeline */}
         <TouchableOpacity
           style={styles.actionCardWrap}
-          onPress={() => navigation.getParent()?.jumpTo('assessment')}
+          onPress={() => openPatientTab('assessment')}
           activeOpacity={0.9}>
           <LinearGradient
             colors={[COLORS.primary, COLORS.primaryDark]}
@@ -228,7 +229,7 @@ export default function HomeScreen({ navigation }) {
         {/* Care Timeline */}
         <View style={[styles.sectionHeader, { marginTop: 8 }]}>
           <Text style={styles.sectionTitle}>Care Timeline</Text>
-          <TouchableOpacity onPress={() => navigation.getParent()?.jumpTo('journey')}>
+          <TouchableOpacity onPress={() => openPatientTab('journey')}>
             <Text style={styles.sectionLink}>View all</Text>
           </TouchableOpacity>
         </View>
@@ -252,7 +253,7 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity
                 key={item.id}
                 style={styles.timelineCard}
-                onPress={() => navigation.getParent()?.jumpTo('journey')}
+                onPress={() => openPatientTab('journey')}
                 activeOpacity={0.85}>
                 <View style={[styles.timelineIcon, { backgroundColor: item.iconBg }]}>
                   <Ionicons name={item.icon} size={18} color={item.iconColor} />

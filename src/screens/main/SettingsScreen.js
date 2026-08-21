@@ -15,6 +15,7 @@ import { signOut, updatePassword } from 'firebase/auth';
 import { StorageService } from '../../utils/storage';
 import { UserProfileService } from '../../services/UserProfileService';
 import { useFacility } from '../../contexts/FacilityContext';
+import { openFacilitySelection } from '../../navigation/openPatientTab';
 import { ProfileHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 
 const LANGUAGES = [
@@ -183,7 +184,7 @@ export default function SettingsScreen({ navigation }) {
     else if (key === 'medical') setExpandedSection(expandedSection === 'medical' ? null : 'medical');
     else if (key === 'security') setExpandedSection(expandedSection === 'security' ? null : 'security');
     else if (key === 'app') setExpandedSection(expandedSection === 'app' ? null : 'app');
-    else if (key === 'facility') navigation.navigate('FacilitySelection');
+    else if (key === 'facility') openFacilitySelection();
     else Alert.alert('Coming soon', 'This section will be available in a future update.');
   };
 

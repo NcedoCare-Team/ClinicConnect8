@@ -1,16 +1,19 @@
 // Assessment tab — choose consultation mode (text chat or live — coming soon)
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Alert,
   ScrollView, StatusBar, useWindowDimensions,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { LAYOUT } from '../../components/layout/ScreenHeader';
 import { useFacility } from '../../contexts/FacilityContext';
 import FacilityConfirmModal from '../../components/FacilityConfirmModal';
+import { SessionService } from '../../services/SessionService';
+import { openFacilitySelection } from '../../navigation/openPatientTab';
 
 function AssessmentHeader() {
   return (
@@ -59,6 +62,12 @@ export default function SmartChatScreen({ navigation }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
 
+  useFocusEffect(
+    useCallback(() => {
+      SessionService.consumePendingMainTab();
+    }, []),
+  );
+
   const runPendingAction = () => {
     if (pendingAction === 'text') {
       navigation.navigate('ChatConversation', {
@@ -87,7 +96,7 @@ export default function SmartChatScreen({ navigation }) {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Find facilities',
-            onPress: () => navigation.navigate('FacilitySelection'),
+            onPress: () => openFacilitySelection(),
           },
         ],
       );
@@ -116,7 +125,7 @@ export default function SmartChatScreen({ navigation }) {
         onChangeFacility={() => {
           setShowConfirmModal(false);
           setPendingAction(null);
-          navigation.navigate('FacilitySelection');
+          openFacilitySelection();
         }}
         onCancel={() => {
           setShowConfirmModal(false);
@@ -141,7 +150,7 @@ export default function SmartChatScreen({ navigation }) {
             ) : (
               <TouchableOpacity
                 style={styles.facilityMissingRow}
-                onPress={() => navigation.navigate('FacilitySelection')}
+                onPress={() => openFacilitySelection()}
                 activeOpacity={0.85}>
                 <Ionicons name="location-outline" size={16} color={COLORS.warning} />
                 <Text style={styles.facilityMissingText}>

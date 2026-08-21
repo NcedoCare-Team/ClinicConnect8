@@ -8,6 +8,8 @@ export const COLORS = {
   primaryLight:     '#3B82F6',   // Mid blue    — light accents
   primaryVeryLight: '#EFF6FF',   // Near-white blue tint — card backgrounds
   primaryGlow:      '#BFDBFE',   // Blue highlight — borders / glows
+  primarySoft:      'rgba(37, 99, 235, 0.12)',  // Selected tab indicator
+  primaryFaded:     'rgba(37, 99, 235, 0.06)',
 
   // ── Ink / Dark ────────────────────────────────────────────
   ink:              '#0A0A0F',

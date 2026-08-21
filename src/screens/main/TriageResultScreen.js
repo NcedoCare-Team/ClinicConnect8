@@ -10,6 +10,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
+import { openPatientTab } from '../../navigation/openPatientTab';
 
 const PRIORITY_CONFIG = {
   CRITICAL: {
@@ -212,7 +213,7 @@ export default function TriageResultScreen({ navigation, route }) {
           <View style={styles.actionsSection}>
             <TouchableOpacity
               style={styles.primaryAction}
-              onPress={() => navigation.navigate('Main', { tab: 'journey' })}
+              onPress={() => openPatientTab('journey')}
               activeOpacity={0.85}>
               <LinearGradient
                 colors={cfg.gradient}
@@ -224,7 +225,7 @@ export default function TriageResultScreen({ navigation, route }) {
 
             <TouchableOpacity
               style={styles.secondaryAction}
-              onPress={() => navigation.getParent?.()?.jumpTo('assessment') || navigation.navigate('Main', { tab: 'assessment' })}
+              onPress={() => openPatientTab('assessment')}
               activeOpacity={0.8}>
               <Ionicons name="sparkles-outline" size={18} color={COLORS.textSecondary} />
               <Text style={styles.secondaryActionText}>Start New Assessment</Text>

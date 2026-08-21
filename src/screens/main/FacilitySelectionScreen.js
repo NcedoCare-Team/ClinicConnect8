@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';      
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { replacePatientTab } from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
 
 // ── Nominatim API ─────────────────────────────────────────────────────────────
@@ -203,7 +204,7 @@ export default function FacilitySelectionScreen({ navigation }) {
 
   const handleBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate('Main');
+    else replacePatientTab('home');
   };
 
   const requestLocation = async () => {
