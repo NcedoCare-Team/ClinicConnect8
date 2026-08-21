@@ -9,8 +9,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, firestore } from '../../../firebase';
 import { setDoc, getDoc } from 'firebase/firestore';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { replacePatientTab } from '../../navigation/openPatientTab';
+import { useLocalSearchParams, router } from 'expo-router';
+import { replacePatientTab, parseNavParam } from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
 import { useFacility } from '../../contexts/FacilityContext';
@@ -31,9 +31,8 @@ const TYPE_COLOR = {
 };
 
 export default function FacilityWelcomeScreen() {
-  const navigation = useNavigation();
-  const route = useRoute();
-  const { facility } = route?.params || {};
+  const searchParams = useLocalSearchParams();
+  const facility = parseNavParam(searchParams.facility, {});
   const { setFacilitySession } = useFacility();
 
   const facilityName      = facility?.name     || 'Healthcare Facility';
@@ -135,7 +134,7 @@ export default function FacilityWelcomeScreen() {
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={styles.hero}>
 
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <View style={styles.backBtnInner}>
               <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
             </View>

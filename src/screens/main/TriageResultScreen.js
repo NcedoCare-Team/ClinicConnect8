@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { useRoute } from '@react-navigation/native';
 import { COLORS } from '../../constants/colors';
 import { openPatientTab } from '../../navigation/openPatientTab';
 
@@ -61,7 +62,6 @@ const PRIORITY_CONFIG = {
 };
 
 export default function TriageResultScreen() {
-  const navigation = useNavigation();
   const route = useRoute();
   const {
     priority = 'LOW',
@@ -105,7 +105,7 @@ export default function TriageResultScreen() {
         colors={cfg.gradient}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={styles.heroHeader}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.heroTitle}>Triage Assessment</Text>

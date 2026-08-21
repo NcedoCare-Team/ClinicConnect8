@@ -11,8 +11,10 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';      
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useNavigation } from '@react-navigation/native';
-import { replacePatientTab } from '../../navigation/openPatientTab';
+import {
+  openFacilityWelcome,
+  goBackOrHome,
+} from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
 
 // ── Nominatim API ─────────────────────────────────────────────────────────────
@@ -184,7 +186,6 @@ function parseNominatimResults(allPlaces, userLat, userLng) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function FacilitySelectionScreen() {
-  const navigation = useNavigation();
   const [locationStatus, setLocationStatus] = useState('loading');
   const [userLocation,   setUserLocation]   = useState(null);
   const [facilities,     setFacilities]     = useState([]);
@@ -205,8 +206,7 @@ export default function FacilitySelectionScreen() {
   useEffect(() => { requestLocation(); }, []);
 
   const handleBack = () => {
-    if (navigation.canGoBack()) navigation.goBack();
-    else replacePatientTab('home');
+    goBackOrHome();
   };
 
   const requestLocation = async () => {
@@ -319,7 +319,7 @@ export default function FacilitySelectionScreen() {
 
   const handleSelect = facility => {
     Keyboard.dismiss();
-    navigation.navigate('FacilityWelcome', { facility, userLocation });
+    openFacilityWelcome(facility, userLocation);
   };
 
   // ── Render helpers ────────────────────────────────────────────────────────

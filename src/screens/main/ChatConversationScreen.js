@@ -13,6 +13,7 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
@@ -463,7 +464,7 @@ export default function ChatConversationScreen() {
       duration: 250,
       useNativeDriver: true,
     }).start(() => {
-      navigation.goBack();
+      router.back();
     });
   };
 

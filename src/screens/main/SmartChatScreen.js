@@ -5,7 +5,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Alert,
   ScrollView, StatusBar, useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
@@ -13,7 +13,7 @@ import { LAYOUT } from '../../components/layout/ScreenHeader';
 import { useFacility } from '../../contexts/FacilityContext';
 import FacilityConfirmModal from '../../components/FacilityConfirmModal';
 import { SessionService } from '../../services/SessionService';
-import { openFacilitySelection } from '../../navigation/openPatientTab';
+import { openChatConversation, openFacilitySelection } from '../../navigation/openPatientTab';
 
 function AssessmentHeader() {
   return (
@@ -56,7 +56,6 @@ function AssessmentHeader() {
 }
 
 export default function SmartChatScreen() {
-  const navigation = useNavigation();
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width - LAYOUT.screenPadding * 2, 420);
   const { hasFacility, facilityName, ready } = useFacility();
@@ -71,7 +70,7 @@ export default function SmartChatScreen() {
 
   const runPendingAction = () => {
     if (pendingAction === 'text') {
-      navigation.navigate('ChatConversation', {
+      openChatConversation({
         conversationId: null,
         conversationTitle: 'Health Assessment',
         facilityName,
