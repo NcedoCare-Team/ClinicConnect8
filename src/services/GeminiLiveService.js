@@ -1,62 +1,26 @@
 // src/services/GeminiLiveService.js
 // ─────────────────────────────────────────────────────────────────────────────
-// BUGS FIXED IN THIS VERSION:
+// NcedoCare — Gemini Live Real-Time Voice Consultation Client Service
 //
-// ROOT CAUSE — ALL prior crashes / "goes back to home" were caused by this:
-//
-//   The Gemini Live API requires camelCase JSON keys.
-//   The previous version sent snake_case throughout, which the API silently
-//   rejected. The WebSocket closed immediately, onSessionEnded fired before
-//   sessionStartedRef was set to true, so safeGoBack() was called → home.
-//
-//   Specific snake_case → camelCase fixes:
-//     generation_config        → generationConfig
-//     response_modalities      → responseModalities
-//     speech_config            → speechConfig
-//     voice_config             → voiceConfig
-//     prebuilt_voice_config    → prebuiltVoiceConfig
-//     voice_name               → voiceName
-//     system_instruction       → systemInstruction
-//     context_window_compression → contextWindowCompression
-//     trigger_tokens           → triggerTokens
-//     sliding_window           → slidingWindow
-//     target_tokens            → targetTokens
-//     realtime_input           → realtimeInput
-//     media_chunks             → (removed — wrong format entirely)
-//     mime_type                → mimeType
-//     client_content           → (removed — use realtimeInput.text instead)
-//     turn_complete            → turnComplete
-//
-//   Audio message format was also completely wrong:
-//     OLD (broken):  { realtime_input: { media_chunks: [{ mime_type, data }] } }
-//     NEW (correct): { realtimeInput: { audio: { mimeType: "audio/pcm", data } } }
-//
-//   Text message format was also wrong:
-//     OLD (broken):  { client_content: { turns: [...], turn_complete: true } }
-//     NEW (correct): { realtimeInput: { text: "..." } }
-//                    — matches the working geminilive.js reference implementation
-//
-//   Model name: 'gemini-2.0-flash-exp' is deprecated.
-//     Use 'gemini-2.0-flash-live-001' (stable) or check AI Studio for latest.
-//
+// Features:
+//   - Low-latency bidirectional WebSocket connection to Python relay server.
+//   - Audio streaming (16kHz PCM input / 24kHz PCM output -> WAV generation).
+//   - Text prompting and activity tracking (activityStart, activityEnd).
+//   - Triage submission event listener (onTriageSubmitted) for seamless auto-close.
+//   - Live transcript events for real-time visual conversation display.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { API_CONFIG } from './ApiService';
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-// Connect to the Python relay server instead of directly to Gemini.
-// The relay server handles the Gemini API key and protocol details.
-// Derive the WS host from the HTTP API base URL (same server, port 8765).
 function getRelayUrl() {
-  const httpBase = API_CONFIG.BASE_URL; // e.g. "http://10.150.65.148:5000"
+  const httpBase = API_CONFIG.BASE_URL; // e.g. "http://192.168.68.105:5000"
   const host = httpBase.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
   return `ws://${host}:8765`;
 }
 
-const OUTPUT_SAMPLE_RATE = 24000; // Gemini outputs 24 kHz PCM
+const OUTPUT_SAMPLE_RATE = 24000; // Gemini Live outputs 24 kHz PCM
 
-// ─── WAV Header ───────────────────────────────────────────────────────────────
 function buildWavHeader(pcmLen, sr = OUTPUT_SAMPLE_RATE, ch = 1, bits = 16) {
   const byteRate = sr * ch * (bits / 8);
   const blkAlign = ch * (bits / 8);
@@ -87,63 +51,6 @@ function u8ToB64(arr) {
   return btoa(s);
 }
 
-// ─── System Instruction Builder ───────────────────────────────────────────────
-export function buildSystemInstruction(profile = {}, jobText = '') {
-  const {
-    firstName     = 'Candidate',
-    disability    = 'None disclosed',
-    accommodation = '',
-    field         = 'General',
-    experience    = '0',
-    education     = 'Not specified',
-    skills        = [],
-    careerGoal    = 'Full-time employment',
-  } = profile;
-
-  const jobCtx = jobText
-    ? `\n\nJob Context:\n${jobText}\nBase technical questions strictly on these requirements.`
-    : '\n\nNo specific job provided — use general industry questions.';
-
-  const accNote = accommodation
-    ? `\nAccommodation: ${accommodation}. Respect this in pacing and style.`
-    : '';
-
-  return `
-You are VisionAlly, a senior hiring manager conducting a real job interview. You are NOT a coach right now — you are the person who decides whether this candidate gets hired.
-
-Your personality: Professional, direct, fair but demanding. You have high standards. You value substance over fluff. You respect candidates who give specific, concrete examples.
-
-OPENING (your very first response — TURN 1):
-Greet ${firstName} briefly: "Hi ${firstName}, thanks for coming in. I'll be interviewing you today. Let's dive right in."
-Then ask Question 1: "Tell me about yourself — what makes you the right fit for a role in ${field}?"
-
-Candidate profile: ${firstName}, ${field} field, ${experience} yr(s) experience, education: ${education}.${accNote}
-${jobCtx}
-
-INTERVIEW FLOW (exactly 3 turns):
-1. TURN 1: Brief greeting + Q1 (as above).
-2. TURN 2: After user answers Q1 — give sharp, honest micro-feedback (1 sentence max), then ask Q2: a challenging follow-up that digs deeper based on what the user actually said. If they were vague, call it out and ask for specifics. If they were strong, push harder.
-3. TURN 3: After user answers Q2 — give final feedback on Q2 (1-2 sentences), then a direct closing assessment: "Overall, here's where you stand: [honest 2-sentence verdict on their readiness]. Check your feedback report for details. Good luck."
-
-SCORING MINDSET (internal — this shapes how you respond):
-- If the candidate gives generic, rehearsed, or vague answers → be skeptical, push back, score LOW.
-- If the candidate provides specific examples, numbers, real achievements → acknowledge it, score HIGHER.
-- If the candidate rambles or goes off-topic → redirect firmly.
-- A perfect score (90+) requires truly exceptional, convincing answers with proof.
-- Average performance = 50-65. Good = 70-80. Excellent = 80-90.
-- Do NOT inflate scores to be nice. Be fair but strict.
-
-RULES:
-- Keep responses SHORT and punchy — maximum 15 seconds of speaking per turn.
-- Sound like a real hiring manager, not an AI assistant.
-- NEVER narrate your reasoning or describe what you plan to do.
-- NEVER repeat what the candidate said back to them.
-- Be respectful but make them earn the job.
-- Wait for the user to finish speaking before responding.
-`.trim();
-}
-
-// ─── GeminiLiveService ────────────────────────────────────────────────────────
 export class GeminiLiveService {
   constructor() {
     this._ws              = null;
@@ -154,21 +61,27 @@ export class GeminiLiveService {
     this._msgQueue        = [];
     this._processingQueue = false;
 
-    // Set these before calling connect()
-    this.onSetupComplete = null; // ()
-    this.onAudioReady    = null; // (wavUri: string)
-    this.onTurnComplete  = null; // ()
-    this.onInterrupted   = null; // ()
-    this.onSessionEnded  = null; // (code, reason)
-    this.onError         = null; // (Error)
+    // Callbacks to configure before or right after instantiating
+    this.onSetupComplete   = null; // () => void
+    this.onAudioReady      = null; // (wavUri: string) => void
+    this.onTurnComplete    = null; // () => void
+    this.onInterrupted     = null; // () => void
+    this.onTriageSubmitted = null; // (data: { caseId, fallbackFields, conversationId, priority }) => void
+    this.onTranscript      = null; // (data: { role: 'ai'|'user', text: string, turnComplete?: boolean }) => void
+    this.onSessionEnded    = null; // (code: number, reason: string) => void
+    this.onError           = null; // (error: Error) => void
   }
 
-  async connect(systemInstruction) {
+  /**
+   * Connect to the Gemini Live relay server.
+   * @param {Object|string} config - Options or custom systemInstruction string
+   */
+  async connect(config = {}) {
     return new Promise((resolve, reject) => {
-    if (this._ws) {
-      try { this._ws.close(); } catch { /* ignore */ }
-      this._ws = null;
-    }
+      if (this._ws) {
+        try { this._ws.close(); } catch { /* ignore */ }
+        this._ws = null;
+      }
 
       const relayUrl = getRelayUrl();
       console.log('[GeminiLive] Connecting to relay:', relayUrl);
@@ -182,25 +95,25 @@ export class GeminiLiveService {
 
       let settled = false;
 
+      const setupPayload = typeof config === 'string'
+        ? { systemInstruction: config, voiceName: 'Aoede' }
+        : {
+            systemInstruction: config.systemInstruction || undefined,
+            voiceName: config.voiceName || 'Aoede',
+            sessionBinding: config.sessionBinding || {},
+            idToken: config.idToken || null,
+            conversationId: config.conversationId || undefined,
+          };
+
       this._ws.onopen = () => {
         console.log('[GeminiLive] WS open — sending setup to relay');
         this._isConnected = true;
-
-        // Send setup to the Python relay server.
-        // The relay injects the API key + model config and forwards to Gemini.
         this._ws.send(JSON.stringify({
-          setup: {
-            systemInstruction: systemInstruction,
-            voiceName: 'Aoede',
-          },
+          setup: setupPayload,
         }));
       };
 
-      this._msgCount = 0;
-
       this._ws.onmessage = (evt) => {
-        this._msgCount++;
-        // Queue messages and process sequentially to prevent race conditions
         this._msgQueue.push({ raw: evt.data, resolveSetup: resolve });
         if (!this._processingQueue) this._drainQueue();
       };
@@ -209,7 +122,7 @@ export class GeminiLiveService {
         if (settled) return;
         settled = true;
         console.log('[GeminiLive] WS error:', err);
-        const e = new Error('WebSocket error — verify API key and internet connection');
+        const e = new Error('WebSocket error — verify relay server and internet connection');
         if (this.onError) this.onError(e);
         reject(e);
       };
@@ -228,9 +141,6 @@ export class GeminiLiveService {
     });
   }
 
-  // ✅ FIXED: correct camelCase format + correct audio field structure
-  //    OLD (broken): { realtime_input: { media_chunks: [{ mime_type, data }] } }
-  //    NEW (correct): { realtimeInput: { audio: { mimeType, data } } }
   sendAudioChunk(b64Pcm) {
     if (!this.isReady) return;
     this._send({
@@ -243,7 +153,6 @@ export class GeminiLiveService {
     });
   }
 
-  // Manual activity signals for strict turn-taking (auto-detection disabled)
   sendActivityStart() {
     if (!this.isReady) return;
     this._send({ realtimeInput: { activityStart: {} } });
@@ -254,38 +163,24 @@ export class GeminiLiveService {
     this._send({ realtimeInput: { activityEnd: {} } });
   }
 
-  // ✅ FIXED: use realtimeInput.text (matches geminilive.js reference)
-  //    OLD (broken): { client_content: { turns: [...], turn_complete: true } }
-  //    NEW (correct): { realtimeInput: { text: "..." } }
   sendTextPrompt(text) {
     if (!this.isReady) return;
     this._send({
-      realtimeInput: {                               // ✅ was: client_content (wrong key + format)
+      realtimeInput: {
         text: text,
       },
     });
+    if (this.onTranscript) {
+      this.onTranscript({ role: 'user', text });
+    }
   }
 
-  // ✅ FIXED: for cases where you need a full turn (e.g. kicking off the interview)
-  //    Use clientContent with turnComplete (camelCase) when you need a hard turn boundary.
   sendClientTurn(text) {
     if (!this.isReady) return;
     this._send({
-      clientContent: {                               // camelCase ✅
+      clientContent: {
         turns: [{ role: 'user', parts: [{ text }] }],
-        turnComplete: true,                          // camelCase ✅ was: turn_complete
-      },
-    });
-  }
-
-  sendVideoFrame(b64Jpeg) {
-    if (!this.isReady) return;
-    this._send({
-      realtimeInput: {                               // ✅ was: realtime_input
-        video: {                                     // ✅ was: media_chunks array (wrong)
-          mimeType: 'image/jpeg',                    // ✅ was: mime_type inside chunk object
-          data: b64Jpeg,
-        },
+        turnComplete: true,
       },
     });
   }
@@ -319,16 +214,25 @@ export class GeminiLiveService {
     try {
       msg = JSON.parse(typeof raw === 'string' ? raw : await raw.text());
     } catch (e) {
-      console.log('[GeminiLive] JSON parse failed:', e.message, 'raw type:', typeof raw, 'raw preview:', String(raw).substring(0, 100));
+      console.log('[GeminiLive] JSON parse failed:', e.message);
       return;
     }
 
+    // 1. Setup acknowledgment
     if (msg.setupComplete !== undefined) {
-      console.log('[GeminiLive] ✅ setupComplete');
+      console.log('[GeminiLive] ✅ setupComplete verified');
       this._isSetupComplete = true;
       if (this.onSetupComplete) this.onSetupComplete();
-      if (resolveSetup)         resolveSetup();
+      if (resolveSetup) resolveSetup();
       return;
+    }
+
+    // 2. Triage submitted notification from relay server
+    if (msg.triageSubmitted) {
+      console.log('[GeminiLive] 🎯 Triage submitted event received:', msg.caseId, msg.priority);
+      if (this.onTriageSubmitted) {
+        this.onTriageSubmitted(msg);
+      }
     }
 
     if (msg.sessionResumptionUpdate?.newHandle) {
@@ -336,25 +240,23 @@ export class GeminiLiveService {
     }
 
     if (msg.goAway) {
-      console.warn('[GeminiLive] GoAway received');
+      console.warn('[GeminiLive] GoAway received from Gemini');
       if (this.onSessionEnded) this.onSessionEnded(0, 'GoAway');
       return;
     }
 
     const c = msg.serverContent;
-    if (!c) {
-      console.log('[GeminiLive] non-serverContent msg keys:', Object.keys(msg));
-      return;
-    }
+    if (!c) return;
 
     if (c.interrupted) {
-      console.log('[GeminiLive] interrupted');
+      console.log('[GeminiLive] Interrupted by user');
       this._audioBuffer = [];
       if (this.onInterrupted) this.onInterrupted();
       return;
     }
 
     const parts = c.modelTurn?.parts ?? [];
+    let turnText = '';
     for (const p of parts) {
       if (p.inlineData?.data) {
         const mime = p.inlineData.mimeType || '';
@@ -362,9 +264,16 @@ export class GeminiLiveService {
           this._audioBuffer.push(p.inlineData.data);
         }
       }
+      if (p.text) {
+        turnText += p.text;
+      }
     }
 
-    // Flush ALL audio as ONE WAV at generationComplete (eliminates crackling)
+    if (turnText && this.onTranscript) {
+      this.onTranscript({ role: 'ai', text: turnText });
+    }
+
+    // Flush audio as ONE clean WAV on generationComplete
     if (c.generationComplete) {
       if (this._audioBuffer.length > 0) {
         const wavUri = await this._flushToWav();
@@ -374,8 +283,6 @@ export class GeminiLiveService {
     }
 
     if (c.turnComplete) {
-      console.log('[GeminiLive] turnComplete, remaining chunks:', this._audioBuffer.length);
-      // Safety net — flush any audio that arrived after generationComplete
       if (this._audioBuffer.length > 0) {
         const wavUri = await this._flushToWav();
         if (wavUri && this.onAudioReady) await this.onAudioReady(wavUri);
@@ -398,13 +305,13 @@ export class GeminiLiveService {
       wav.set(hdr, 0);
       wav.set(pcm, hdr.length);
 
-      const uri = `${FileSystem.cacheDirectory}va_${Date.now()}.wav`;
+      const uri = `${FileSystem.cacheDirectory}live_ai_${Date.now()}.wav`;
       await FileSystem.writeAsStringAsync(uri, u8ToB64(wav), {
         encoding: FileSystem.EncodingType.Base64,
       });
       return uri;
     } catch (e) {
-      console.log('[GeminiLive] _flushToWav:', e);
+      console.log('[GeminiLive] _flushToWav error:', e);
       return null;
     }
   }
@@ -419,17 +326,4 @@ export class GeminiLiveService {
 
   get isReady() { return this._isConnected && this._isSetupComplete; }
   get resumptionToken() { return this._resumptionToken; }
-}
-
-// ─── Document Analyser ────────────────────────────────────────────────────────
-export async function analyseJobDocument(base64Data, mimeType) {
-  // Route through the Flask server so the API key stays server-side
-  const url = `${API_CONFIG.BASE_URL}/api/analyse_document`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: base64Data, mimeType }),
-  });
-  const json = await res.json();
-  return json.text ?? '';
 }

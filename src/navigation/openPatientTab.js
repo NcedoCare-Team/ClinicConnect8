@@ -66,6 +66,16 @@ export function openChatConversation(params = {}) {
   });
 }
 
+export function openLiveChat(params = {}) {
+  router.push({
+    pathname: '/(app)/assessment/LiveChat',
+    params: {
+      conversationId: params.conversationId ?? '',
+      facilityName: params.facilityName ?? '',
+    },
+  });
+}
+
 export function openFacilitySelection() {
   router.push('/(app)/home/FacilitySelection');
 }

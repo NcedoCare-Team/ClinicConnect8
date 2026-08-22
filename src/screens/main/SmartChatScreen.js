@@ -13,7 +13,7 @@ import { LAYOUT } from '../../components/layout/ScreenHeader';
 import { useFacility } from '../../contexts/FacilityContext';
 import FacilityConfirmModal from '../../components/FacilityConfirmModal';
 import { SessionService } from '../../services/SessionService';
-import { openChatConversation, openFacilitySelection } from '../../navigation/openPatientTab';
+import { openChatConversation, openLiveChat, openFacilitySelection } from '../../navigation/openPatientTab';
 
 function AssessmentHeader() {
   return (
@@ -76,11 +76,10 @@ export default function SmartChatScreen() {
         facilityName,
       });
     } else if (pendingAction === 'live') {
-      Alert.alert(
-        'Live Chat',
-        'Real-time voice consultation is coming soon. We\'re designing an experience that feels natural and safe — check back shortly.',
-        [{ text: 'OK' }],
-      );
+      openLiveChat({
+        conversationId: null,
+        facilityName,
+      });
     }
     setPendingAction(null);
   };
@@ -189,23 +188,24 @@ export default function SmartChatScreen() {
             <TouchableOpacity
               style={styles.optionWrap}
               onPress={startLiveChat}
-              activeOpacity={0.85}>
+              activeOpacity={0.88}>
               <View style={styles.optionCardSecondary}>
                 <View style={styles.optionIconSecondary}>
                   <Ionicons name="mic" size={24} color={COLORS.primary} />
                 </View>
                 <View style={styles.optionBody}>
                   <View style={styles.optionTitleRow}>
-                    <Text style={styles.optionTitle}>Live Chat</Text>
-                    <View style={styles.soonBadge}>
-                      <Text style={styles.soonBadgeText}>Coming soon</Text>
+                    <Text style={styles.optionTitle}>Live Voice Triage</Text>
+                    <View style={styles.liveBadge}>
+                      <View style={styles.liveDot} />
+                      <Text style={styles.liveBadgeText}>Live AI</Text>
                     </View>
                   </View>
                   <Text style={styles.optionSub}>
-                    Real-time voice assessment — launching soon.
+                    Speak naturally with Dr. Ncedo for instant voice assessment & triage.
                   </Text>
                 </View>
-                <Ionicons name="lock-closed-outline" size={20} color={COLORS.textTertiary} />
+                <Ionicons name="arrow-forward" size={20} color={COLORS.primary} />
               </View>
             </TouchableOpacity>
 
@@ -492,6 +492,22 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   soonBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.warning },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    gap: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  liveBadgeText: { fontSize: 10, fontWeight: '800', color: '#059669' },
 
   note: {
     flexDirection: 'row',

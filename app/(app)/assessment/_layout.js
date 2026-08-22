@@ -9,6 +9,14 @@ export default function AssessmentLayout() {
         options={{ animation: 'slide_from_right', gestureEnabled: true }}
       />
       <Stack.Screen
+        name="LiveChat"
+        options={{
+          presentation: 'fullScreenModal',
+          animation: 'slide_from_bottom',
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
         name="TriageResult"
         options={{
           presentation: 'modal',
