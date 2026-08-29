@@ -25,15 +25,20 @@ import { useFacility } from '../../contexts/FacilityContext';
 import {
   getFacilityJourneyPhase,
   facilityJourneyLabel,
+  isVisitLive,
 } from '../../utils/facilityJourney';
+import FacilityJourneyStepper from '../../components/FacilityJourneyStepper';
 
 function statusBadgeForCase(c) {
   const phase = getFacilityJourneyPhase(c);
-  const label = facilityJourneyLabel(phase) || 'Waiting';
-  if (phase === 'completed') {
-    return { label, color: COLORS.low || '#16A34A', bg: COLORS.lowLight || '#DCFCE7' };
+  const label = facilityJourneyLabel(phase) || 'Waiting for nurse';
+  if (phase === 'signed_out' || phase === 'completed') {
+    return { label, color: COLORS.success, bg: COLORS.successLight };
   }
-  if (phase === 'attended') {
+  if (phase === 'stay') {
+    return { label, color: COLORS.info, bg: COLORS.infoLight };
+  }
+  if (phase === 'see_nurse' || phase === 'see_doctor' || phase === 'attended') {
     return { label, color: COLORS.primary, bg: COLORS.primaryVeryLight };
   }
   return { label, color: COLORS.medium, bg: COLORS.mediumLight };
@@ -42,8 +47,8 @@ function statusBadgeForCase(c) {
 export default function HomeScreen({ navigation }) {
   const { facilityName, hasFacility } = useFacility();
   const [facility,         setFacility]         = useState('');
-  const [careItems,        setCareItems]        = useState([]);
-  const [lastAssessment,   setLastAssessment]   = useState(null);
+  const [liveCase,         setLiveCase]         = useState(null);
+  const [historyItems,     setHistoryItems]     = useState([]);
   const [loading,          setLoading]          = useState(true);
   const [healthData,       setHealthData]       = useState(null);
   const [sleepData,        setSleepData]        = useState(() => SleepTrackingService.getSleepData());
@@ -79,7 +84,7 @@ export default function HomeScreen({ navigation }) {
     }, [facilityName, hasFacility])
   );
 
-  // Live queue status for care timeline (Waiting → Attended → Completed)
+  // Live queue + recent signed-out visits for Care Timeline
   useEffect(() => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
@@ -99,12 +104,12 @@ export default function HomeScreen({ navigation }) {
           collection(firestore, COLLECTIONS.TRIAGE_CASES),
           where('patientId', '==', uid),
           orderBy('createdAt', 'desc'),
-          limit(5),
+          limit(8),
         ),
         (snap) => {
           const cases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setCareItems(buildCareTimeline(cases, profile));
-          setLastAssessment(cases[0] || null);
+          setLiveCase(cases.find((c) => isVisitLive(c)) || null);
+          setHistoryItems(cases.filter((c) => !isVisitLive(c)).slice(0, 4));
           setLoading(false);
         },
         () => {
@@ -230,46 +235,99 @@ export default function HomeScreen({ navigation }) {
         <View style={[styles.sectionHeader, { marginTop: 8 }]}>
           <Text style={styles.sectionTitle}>Care Timeline</Text>
           <TouchableOpacity onPress={() => openPatientTab('journey')}>
-            <Text style={styles.sectionLink}>View all</Text>
+            <Text style={styles.sectionLink}>View journey</Text>
           </TouchableOpacity>
         </View>
+        <Text style={styles.sectionDesc}>
+          Live visit steps now, and signed-out visits with your doctor follow-up.
+        </Text>
 
         {loading ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator color={COLORS.primary} />
           </View>
-        ) : careItems.length === 0 ? (
-          <View style={styles.emptyTimeline}>
-            <Ionicons name="calendar-outline" size={32} color={COLORS.textTertiary} />
-            <Text style={styles.emptyText}>No upcoming care items yet</Text>
-            <Text style={styles.emptySub}>Start an assessment to begin your care journey</Text>
-          </View>
         ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.timelineScroll}>
-            {careItems.map(item => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.timelineCard}
-                onPress={() => openPatientTab('journey')}
-                activeOpacity={0.85}>
-                <View style={[styles.timelineIcon, { backgroundColor: item.iconBg }]}>
-                  <Ionicons name={item.icon} size={18} color={item.iconColor} />
+          <View style={styles.timelineBlock}>
+            <TouchableOpacity
+              style={styles.liveJourneyCard}
+              onPress={() => openPatientTab('journey')}
+              activeOpacity={0.88}
+            >
+              <View style={styles.liveJourneyHead}>
+                <View>
+                  <Text style={styles.liveKicker}>
+                    {liveCase ? 'Live visit' : hasFacility ? 'Ready to start' : 'Get started'}
+                  </Text>
+                  <Text style={styles.liveTitle}>
+                    {liveCase
+                      ? facilityJourneyLabel(getFacilityJourneyPhase(liveCase)) || 'In progress'
+                      : hasFacility
+                        ? 'Start assessment'
+                        : 'Choose a facility'}
+                  </Text>
                 </View>
-                <Text style={styles.timelineTitle} numberOfLines={2}>{item.title}</Text>
-                <Text style={styles.timelineMeta}>{item.meta}</Text>
-                {item.badge ? (
-                  <View style={[styles.timelineBadge, { backgroundColor: item.badge.bg }]}>
-                    <Text style={[styles.timelineBadgeText, { color: item.badge.color }]}>
-                      {item.badge.label}
+                {liveCase ? (
+                  <View style={[styles.timelineBadge, { backgroundColor: statusBadgeForCase(liveCase).bg }]}>
+                    <Text style={[styles.timelineBadgeText, { color: statusBadgeForCase(liveCase).color }]}>
+                      {statusBadgeForCase(liveCase).label}
                     </Text>
                   </View>
                 ) : null}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+              </View>
+              <FacilityJourneyStepper
+                caseData={liveCase}
+                compact
+                hasFacility={hasFacility}
+                facilityName={facilityDisplay}
+              />
+            </TouchableOpacity>
+
+            {historyItems.length > 0 ? (
+              <>
+                <Text style={styles.recentLabel}>Recent signed-out visits</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.timelineScroll}>
+                  {historyItems.map((item) => {
+                    const badge = statusBadgeForCase(item);
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.timelineCard}
+                        onPress={() => openPatientTab('journey')}
+                        activeOpacity={0.85}>
+                        <View style={[styles.timelineIcon, { backgroundColor: badge.bg }]}>
+                          <Ionicons name="exit-outline" size={18} color={badge.color} />
+                        </View>
+                        <Text style={styles.timelineTitle} numberOfLines={2}>
+                          {item.doctorConclusion || item.diagnosis || item.chiefComplaint || 'Visit'}
+                        </Text>
+                        <Text style={styles.timelineMeta}>
+                          {item.completedAt?.toDate
+                            ? item.completedAt.toDate().toLocaleDateString('en-ZA', {
+                                day: 'numeric',
+                                month: 'short',
+                              })
+                            : 'Signed out'}
+                        </Text>
+                        {item.guidelines ? (
+                          <Text style={styles.timelineFollow} numberOfLines={2}>
+                            {item.guidelines}
+                          </Text>
+                        ) : null}
+                        <View style={[styles.timelineBadge, { backgroundColor: badge.bg }]}>
+                          <Text style={[styles.timelineBadgeText, { color: badge.color }]}>
+                            Signed out
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            ) : null}
+          </View>
         )}
 
         {/* Community Health Insights — vertical list */}
@@ -361,49 +419,6 @@ function sleepProps(sleep) {
     iconBg: bg, iconColor: color,
     chipLabel: label, chipColor: color, chipBg: bg,
   };
-}
-
-function buildCareTimeline(cases, profile) {
-  const items = [];
-
-  if (profile.currentMedications) {
-    items.push({
-      id: 'med-reminder',
-      icon: 'medkit-outline',
-      iconColor: COLORS.primary,
-      iconBg: COLORS.primaryVeryLight,
-      title: profile.currentMedications.split(',')[0]?.trim() || 'Medication',
-      meta: 'Daily reminder · 08:00',
-    });
-  }
-
-  cases.slice(0, 4).forEach(c => {
-    const badge = statusBadgeForCase(c);
-    items.push({
-      id: c.id,
-      icon: 'document-text-outline',
-      iconColor: badge.color,
-      iconBg: badge.bg,
-      title: c.diagnosis || c.symptoms?.substring(0, 40) || 'Health Assessment',
-      meta: c.createdAt?.toDate
-        ? c.createdAt.toDate().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
-        : 'Recent',
-      badge,
-    });
-  });
-
-  if (items.length === 0) {
-    items.push({
-      id: 'follow-up',
-      icon: 'calendar-outline',
-      iconColor: COLORS.info,
-      iconBg: COLORS.infoLight,
-      title: 'Schedule a follow-up',
-      meta: 'After your first assessment',
-    });
-  }
-
-  return items;
 }
 
 const cardShadow = Platform.select({
@@ -505,6 +520,38 @@ const styles = StyleSheet.create({
   liveText: { fontSize: 10, fontWeight: '900', color: COLORS.low, letterSpacing: 0.8 },
 
   loadingRow: { paddingVertical: 32, alignItems: 'center' },
+  timelineBlock: { marginBottom: 24 },
+  liveJourneyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: LAYOUT.cardRadius,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    marginBottom: 14,
+    ...cardShadow,
+  },
+  liveJourneyHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 10,
+  },
+  liveKicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  liveTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textPrimary },
+  recentLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textTertiary,
+    marginBottom: 10,
+  },
   emptyTimeline: {
     backgroundColor: '#FFFFFF',
     borderRadius: LAYOUT.cardRadius,
@@ -547,6 +594,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   timelineBadgeText: { fontSize: 10, fontWeight: '700' },
+  timelineFollow: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    lineHeight: 15,
+    marginTop: 6,
+  },
 
   insightsList: { gap: 12, marginBottom: 8 },
 });

@@ -30,6 +30,8 @@ import {
   getFacilityJourneyPhase,
   facilityJourneyLabel,
   facilityJourneyNotice,
+  isVisitLive,
+  isVisitSignedOut,
 } from '../../utils/facilityJourney';
 
 export default function ChatConversationScreen() {
@@ -59,7 +61,9 @@ export default function ChatConversationScreen() {
   const journeyPhase = getFacilityJourneyPhase(
     liveCase || (caseStatus ? { status: caseStatus, patientCalledAt: patientCalled } : null)
   );
-  const caseLocked = Boolean(activeCaseId) && journeyPhase !== 'completed' && caseStatus !== 'completed';
+  const caseLocked = Boolean(activeCaseId) && isVisitLive(
+    liveCase || (caseStatus ? { status: caseStatus, patientCalledAt: patientCalled } : null)
+  );
 
   useEffect(() => {
     loadMessages();
@@ -131,7 +135,7 @@ export default function ChatConversationScreen() {
           lastPhaseRef.current = phase;
         }
 
-        if (status === 'completed') {
+        if (isVisitSignedOut(data)) {
           markCaseCompleted();
         }
       },
@@ -153,8 +157,8 @@ export default function ChatConversationScreen() {
   const pushPhaseNotice = async (phase, facilityName) => {
     if (!conversationId || !phase) return;
     // Skip duplicate "waiting" notice if we already showed the queue confirmation from the AI
-    if (phase === 'waiting' && lastPhaseRef.current == null) {
-      lastPhaseRef.current = 'waiting';
+    if ((phase === 'waiting' || phase === 'waiting_nurse') && lastPhaseRef.current == null) {
+      lastPhaseRef.current = phase;
       return;
     }
     const text = facilityJourneyNotice(phase, facilityName);
@@ -188,7 +192,7 @@ export default function ChatConversationScreen() {
     const completionMessage = {
       id: generateUniqueId(),
       type: 'text',
-      text: 'Your visit for this case has been completed by your healthcare facility. You can start a new assessment anytime if you need further help.',
+      text: 'You have been signed out. Your visit summary and anything to follow are now in My Care Journey. You can start a new assessment if you need further help.',
       timestamp: new Date().toISOString(),
       sender: 'ai',
     };
@@ -631,35 +635,37 @@ export default function ChatConversationScreen() {
 
             {/* Right: live facility journey phase */}
             <View style={styles.statusSection}>
-              {caseLocked || journeyPhase === 'completed' ? (
+              {caseLocked || journeyPhase === 'signed_out' || journeyPhase === 'completed' ? (
                 <View style={[
                   styles.casePill,
-                  journeyPhase === 'attended' && styles.casePillAttended,
-                  journeyPhase === 'completed' && styles.casePillDone,
+                  (journeyPhase === 'see_nurse' || journeyPhase === 'see_doctor' || journeyPhase === 'attended' || journeyPhase === 'stay') && styles.casePillAttended,
+                  (journeyPhase === 'signed_out' || journeyPhase === 'completed') && styles.casePillDone,
                 ]}>
                   <Ionicons
                     name={
-                      journeyPhase === 'completed'
+                      journeyPhase === 'signed_out' || journeyPhase === 'completed'
                         ? 'checkmark-circle'
-                        : journeyPhase === 'attended'
-                          ? 'medical'
-                          : 'time'
+                        : journeyPhase === 'stay'
+                          ? 'home'
+                          : journeyPhase === 'see_doctor' || journeyPhase === 'see_nurse' || journeyPhase === 'attended'
+                            ? 'medical'
+                            : 'time'
                     }
                     size={12}
                     color={
-                      journeyPhase === 'completed'
-                        ? (COLORS.success || '#16A34A')
-                        : journeyPhase === 'attended'
+                      journeyPhase === 'signed_out' || journeyPhase === 'completed'
+                        ? COLORS.success
+                        : journeyPhase === 'see_doctor' || journeyPhase === 'see_nurse' || journeyPhase === 'attended' || journeyPhase === 'stay'
                           ? COLORS.primary
                           : COLORS.warning
                     }
                   />
                   <Text style={[
                     styles.casePillText,
-                    journeyPhase === 'attended' && { color: COLORS.primary },
-                    journeyPhase === 'completed' && { color: COLORS.success || '#16A34A' },
+                    (journeyPhase === 'see_nurse' || journeyPhase === 'see_doctor' || journeyPhase === 'attended' || journeyPhase === 'stay') && { color: COLORS.primary },
+                    (journeyPhase === 'signed_out' || journeyPhase === 'completed') && { color: COLORS.success },
                   ]}>
-                    {facilityJourneyLabel(journeyPhase) || 'Waiting'}
+                    {facilityJourneyLabel(journeyPhase) || 'Waiting for nurse'}
                   </Text>
                 </View>
               ) : (
@@ -703,7 +709,7 @@ export default function ChatConversationScreen() {
           <View style={styles.lockedBar}>
             <Text style={styles.lockedTitle}>Facility queue · live</Text>
             <Text style={styles.lockedSub}>
-              Updates as the care team works on your visit. Chat stays paused until completion.
+              Updates as the care team works on your visit. Chat stays paused until the doctor signs you out.
             </Text>
             <View style={styles.journeyBox}>
               <FacilityJourneyStepper

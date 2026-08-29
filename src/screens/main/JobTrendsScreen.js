@@ -24,10 +24,12 @@ import {
   formatCountdown,
 } from '../../utils/queueWait';
 import FacilityJourneyStepper from '../../components/FacilityJourneyStepper';
-import { openPatientTab } from '../../navigation/openPatientTab';
+import { openPatientTab, openFacilitySelection } from '../../navigation/openPatientTab';
+import { useFacility } from '../../contexts/FacilityContext';
 import {
   getFacilityJourneyPhase,
   facilityJourneyLabel,
+  isVisitLive,
 } from '../../utils/facilityJourney';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -38,14 +40,20 @@ function shortId(uid) {
   return uid ? `NC-${uid.slice(-6).toUpperCase()}` : '—';
 }
 
-function patientStatusMeta(c) {
-  const phase = getFacilityJourneyPhase(c);
-  const label = facilityJourneyLabel(phase) || 'Waiting';
-  if (phase === 'completed') {
-    return { label, color: '#16A34A', bg: '#DCFCE7', icon: 'checkmark-circle' };
+function patientStatusMeta(c, extras = {}) {
+  const phase = getFacilityJourneyPhase(c, extras);
+  const label = facilityJourneyLabel(phase) || 'Waiting for nurse';
+  if (phase === 'signed_out' || phase === 'completed') {
+    return { label, color: COLORS.success, bg: COLORS.successLight, icon: 'exit-outline' };
   }
-  if (phase === 'attended') {
+  if (phase === 'stay') {
+    return { label, color: COLORS.primary, bg: COLORS.primaryVeryLight, icon: 'home' };
+  }
+  if (phase === 'see_doctor' || phase === 'see_nurse' || phase === 'attended') {
     return { label, color: COLORS.primary, bg: COLORS.primaryVeryLight, icon: 'medical' };
+  }
+  if (phase === 'assessment' || phase === 'facility') {
+    return { label, color: COLORS.info, bg: COLORS.infoLight, icon: 'flag' };
   }
   return { label, color: COLORS.medium, bg: COLORS.mediumLight, icon: 'time' };
 }
@@ -63,7 +71,7 @@ function formatWhen(ts) {
  */
 function resolveWaitMinutes(activeCase) {
   if (!activeCase) return null;
-  if (getFacilityJourneyPhase(activeCase) !== 'waiting') return 0;
+  if (getFacilityJourneyPhase(activeCase) !== 'waiting_nurse') return 0;
   const ahead = Math.max(0, Number(activeCase.queuePosition || 1) - 1);
   const fromPosition = estimateWaitMinutes(activeCase.priority || 'MEDIUM', ahead);
   const stored = Number(activeCase.estimatedWaitMinutes);
@@ -79,7 +87,50 @@ function remainingSeconds(anchorAt, waitMins, nowMs) {
   return Math.max(0, Math.round((endMs - nowMs) / 1000));
 }
 
+function liveTitleForPhase(phase, hasFacility) {
+  switch (phase) {
+    case 'facility':
+      return hasFacility ? 'Facility linked' : 'Choose a healthcare facility';
+    case 'assessment':
+      return 'Start your health assessment';
+    case 'waiting_nurse':
+      return 'Waiting for a nurse to call you';
+    case 'see_nurse':
+      return 'Please see the nurse';
+    case 'waiting_doctor':
+      return 'Waiting for the doctor to call you';
+    case 'see_doctor':
+      return 'Please see the doctor';
+    case 'stay':
+      return 'Stay at the facility';
+    default:
+      return 'Your visit roadmap';
+  }
+}
+
+function liveSubForPhase(phase) {
+  switch (phase) {
+    case 'facility':
+      return 'Your care team can only follow this visit after you connect a facility.';
+    case 'assessment':
+      return 'Tell Dr. Ncedo how you feel. Your case is sent to the nurse when the assessment is submitted.';
+    case 'waiting_nurse':
+      return 'You are in the nurse queue. Updates appear here when staff call you in.';
+    case 'see_nurse':
+      return 'A nurse is ready for you. Stay nearby until you are seen.';
+    case 'waiting_doctor':
+      return 'Nurse triage is done. Please wait nearby for the doctor.';
+    case 'see_doctor':
+      return 'The doctor is ready for you. They will decide whether you stay or are signed out.';
+    case 'stay':
+      return 'The doctor has asked you to remain for further care. This visit stays live until you are signed out.';
+    default:
+      return 'Follow each step as the care team updates your visit.';
+  }
+}
+
 export default function JobTrendsScreen({ navigation }) {
+  const { hasFacility, facilityName } = useFacility();
   const [activeCase, setActiveCase] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -111,22 +162,19 @@ export default function JobTrendsScreen({ navigation }) {
       setLoading(false);
       return;
     }
-    // Latest case for this patient (any status) — stays live through Waiting → Attended → Completed
+    // Recent cases — live visit is the latest that has not been signed out
     const q = query(
       collection(firestore, COLLECTIONS.TRIAGE_CASES),
       where('patientId', '==', uid),
       orderBy('createdAt', 'desc'),
-      limit(1)
+      limit(8)
     );
 
     const unsub = onSnapshot(
       q,
       (snap) => {
-        if (!snap.empty) {
-          setActiveCase({ id: snap.docs[0].id, ...snap.docs[0].data() });
-        } else {
-          setActiveCase(null);
-        }
+        const cases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setActiveCase(cases.find((c) => isVisitLive(c)) || null);
         setLoadError('');
         setLoading(false);
       },
@@ -171,7 +219,6 @@ export default function JobTrendsScreen({ navigation }) {
     setTimeout(() => setRefreshing(false), 600);
   }, []);
 
-  const statusMeta = activeCase ? patientStatusMeta(activeCase) : null;
   const liveWaitMins = useMemo(() => resolveWaitMinutes(activeCase), [activeCase]);
   const liveWaitLabel = liveWaitMins == null ? '—' : formatWaitMinutes(liveWaitMins);
   const displayCase = useMemo(() => {
@@ -182,6 +229,7 @@ export default function JobTrendsScreen({ navigation }) {
       estimatedWait: liveWaitLabel,
     };
   }, [activeCase, liveWaitMins, liveWaitLabel]);
+  const statusMeta = patientStatusMeta(displayCase, { hasFacility });
 
   // Re-anchor countdown when position / wait estimate changes (or stamp is stale)
   useEffect(() => {
@@ -189,7 +237,7 @@ export default function JobTrendsScreen({ navigation }) {
       setWaitAnchor(null);
       return;
     }
-    if (getFacilityJourneyPhase(activeCase) !== 'waiting') {
+    if (getFacilityJourneyPhase(activeCase) !== 'waiting_nurse') {
       setWaitAnchor({ at: Date.now(), mins: 0 });
       return;
     }
@@ -206,6 +254,8 @@ export default function JobTrendsScreen({ navigation }) {
     activeCase?.patientNotified,
     activeCase?.reviewStartedAt,
     activeCase?.nurseDecision,
+    activeCase?.doctorCalledAt,
+    activeCase?.disposition,
     liveWaitMins,
   ]);
 
@@ -214,8 +264,8 @@ export default function JobTrendsScreen({ navigation }) {
     [waitAnchor, liveWaitMins, nowTick]
   );
   const countdownLabel = formatCountdown(secsLeft);
-  const journeyPhase = getFacilityJourneyPhase(displayCase);
-  const isLiveVisit = journeyPhase === 'waiting' || journeyPhase === 'attended';
+  const journeyPhase = getFacilityJourneyPhase(displayCase, { hasFacility });
+  const liveVisit = isVisitLive(displayCase);
 
   const name = [
     patient?.patientFirstName || patient?.firstName,
@@ -223,14 +273,9 @@ export default function JobTrendsScreen({ navigation }) {
   ].filter(Boolean).join(' ') || patient?.displayName || 'Patient';
   const age = patient?.patientAge || patient?.age || '—';
   const facility =
-    patient?.facilityName || patient?.primaryFacility || 'No facility linked';
-  const totalVisits = history.length + (isLiveVisit ? 1 : 0);
-  const sealedCount = (() => {
-    const ids = new Set(history.map((h) => h.id));
-    let n = history.length;
-    if (activeCase?.status === 'completed' && !ids.has(activeCase.id)) n += 1;
-    return n;
-  })();
+    facilityName || patient?.facilityName || patient?.primaryFacility || 'No facility linked';
+  const totalVisits = history.length + (liveVisit ? 1 : 0);
+  const sealedCount = history.length;
 
   const toggleExpand = (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -241,7 +286,7 @@ export default function JobTrendsScreen({ navigation }) {
     <View style={styles.container}>
       <ScreenHeader
         title="My Care Journey"
-        subtitle="Visit history and live queue updates in one place"
+        subtitle="Past visits, live visit steps, and follow-up from your doctor"
       />
 
       <ScrollView
@@ -310,16 +355,20 @@ export default function JobTrendsScreen({ navigation }) {
           </View>
         </LinearGradient>
 
-        {/* ── Past visits ── */}
-        <Text style={styles.sectionTitle}>Past visits</Text>
+        {/* ── History ── */}
+        <Text style={styles.sectionTitle}>History</Text>
+        <Text style={styles.sectionHint}>
+          Signed-out visits with the doctor's conclusion and anything you need to follow.
+        </Text>
         {loading && history.length === 0 && !activeCase ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={COLORS.primary} size="large" />
           </View>
         ) : history.length === 0 ? (
           <View style={styles.historyEmpty}>
+            <Ionicons name="file-tray-outline" size={22} color={COLORS.textTertiary} />
             <Text style={styles.historyEmptyText}>
-              Completed visits will appear here with your care plan summary.
+              When a doctor signs you out, that visit moves here with your care plan.
             </Text>
           </View>
         ) : (
@@ -333,24 +382,26 @@ export default function JobTrendsScreen({ navigation }) {
                 activeOpacity={0.85}
               >
                 <View style={styles.historyTop}>
-                  <View style={[styles.historyDot, { backgroundColor: COLORS.primary }]} />
+                  <View style={[styles.historyDot, { backgroundColor: COLORS.success }]} />
                   <View style={styles.historyInfo}>
                     <Text style={styles.historyDate}>
-                      {formatWhen(item.completedAt) || 'Completed visit'}
+                      {formatWhen(item.completedAt || item.doctorReviewedAt) || 'Signed-out visit'}
                     </Text>
                     <Text style={styles.historyDiagnosis} numberOfLines={open ? 0 : 2}>
                       {item.doctorConclusion ||
                         item.diagnosis ||
                         item.chiefComplaint ||
-                        'Consultation completed'}
+                        'Visit completed'}
                     </Text>
                     {item.facilityName ? (
                       <Text style={styles.historyNurse}>{item.facilityName}</Text>
                     ) : null}
                   </View>
                   <View style={styles.historyRight}>
-                    <View style={[styles.smallBadge, { backgroundColor: COLORS.primaryVeryLight }]}>
-                      <Text style={[styles.smallBadgeText, { color: COLORS.primary }]}>Done</Text>
+                    <View style={[styles.smallBadge, { backgroundColor: COLORS.successLight }]}>
+                      <Text style={[styles.smallBadgeText, { color: COLORS.success }]}>
+                        Signed out
+                      </Text>
                     </View>
                     <Ionicons
                       name={open ? 'chevron-up' : 'chevron-down'}
@@ -363,14 +414,14 @@ export default function JobTrendsScreen({ navigation }) {
 
                 {open ? (
                   <View style={styles.historyExpand}>
-                    {(item.doctorConclusion || item.diagnosis) && (
+                    {(item.doctorConclusion || item.diagnosis) ? (
                       <View style={styles.detailBlock}>
-                        <Text style={styles.detailLabel}>Clinical conclusion</Text>
+                        <Text style={styles.detailLabel}>Doctor conclusion</Text>
                         <Text style={styles.detailValue}>
                           {item.doctorConclusion || item.diagnosis}
                         </Text>
                       </View>
-                    )}
+                    ) : null}
                     {item.medications ? (
                       <View style={styles.detailBlock}>
                         <Text style={styles.detailLabel}>Medications</Text>
@@ -378,9 +429,15 @@ export default function JobTrendsScreen({ navigation }) {
                       </View>
                     ) : null}
                     {item.guidelines ? (
-                      <View style={styles.detailBlock}>
-                        <Text style={styles.detailLabel}>Guidelines & follow-up</Text>
+                      <View style={styles.followBox}>
+                        <Text style={styles.detailLabel}>What you should follow</Text>
                         <Text style={styles.detailValue}>{item.guidelines}</Text>
+                      </View>
+                    ) : null}
+                    {item.doctorNotes && !item.guidelines ? (
+                      <View style={styles.detailBlock}>
+                        <Text style={styles.detailLabel}>Care notes</Text>
+                        <Text style={styles.detailValue}>{item.doctorNotes}</Text>
                       </View>
                     ) : null}
                     {item.symptoms ? (
@@ -389,6 +446,8 @@ export default function JobTrendsScreen({ navigation }) {
                         <Text style={styles.detailValue}>{item.symptoms}</Text>
                       </View>
                     ) : null}
+                    <Text style={styles.historyTreeLabel}>Visit path</Text>
+                    <FacilityJourneyStepper caseData={item} compact />
                   </View>
                 ) : null}
               </TouchableOpacity>
@@ -396,15 +455,17 @@ export default function JobTrendsScreen({ navigation }) {
           })
         )}
 
-        {/* ── Live journey (under history) ── */}
+        {/* ── Live journey ── */}
         <Text style={[styles.sectionTitle, { marginTop: 22 }]}>Live journey</Text>
+        <Text style={styles.sectionHint}>
+          Your current visit as a step-by-step roadmap. Signed-out visits leave this list and appear in History.
+        </Text>
 
-        {displayCase && statusMeta ? (
-          <View
+        <View
             style={[
               styles.activeCard,
-              journeyPhase === 'completed' && styles.activeCardCall,
-              journeyPhase === 'attended' && styles.activeCardAttended,
+              journeyPhase === 'stay' && styles.activeCardStay,
+              (journeyPhase === 'see_nurse' || journeyPhase === 'see_doctor') && styles.activeCardAttended,
             ]}
           >
             <View style={styles.activeCardHeader}>
@@ -414,29 +475,21 @@ export default function JobTrendsScreen({ navigation }) {
                   {statusMeta.label}
                 </Text>
               </View>
-              {displayCase.facilityName ? (
+              {(displayCase?.facilityName || facilityName) ? (
                 <Text style={styles.facilityChip} numberOfLines={1}>
-                  {displayCase.facilityName}
+                  {displayCase?.facilityName || facilityName}
                 </Text>
               ) : null}
             </View>
 
             <Text style={styles.activeCardTitle}>
-              {journeyPhase === 'completed'
-                ? 'Your assessment is completed'
-                : journeyPhase === 'attended'
-                  ? 'You are being attended'
-                  : 'You are waiting in the facility queue'}
+              {liveTitleForPhase(journeyPhase, hasFacility)}
             </Text>
             <Text style={styles.activeCardSub}>
-              {journeyPhase === 'waiting'
-                ? 'Updates appear here in real time as staff review you on the facility portal.'
-                : journeyPhase === 'attended'
-                  ? 'A healthcare worker has started your review. Stay nearby until you are called.'
-                  : 'Your visit is finished. You can start a new assessment when you need one.'}
+              {liveSubForPhase(journeyPhase)}
             </Text>
 
-            {journeyPhase === 'waiting' ? (
+            {journeyPhase === 'waiting_nurse' && displayCase ? (
               <View style={styles.statsRow}>
                 <View style={styles.statBox}>
                   <Text style={styles.statValue}>#{displayCase.queuePosition || '—'}</Text>
@@ -459,36 +512,47 @@ export default function JobTrendsScreen({ navigation }) {
               </View>
             ) : null}
 
+            {journeyPhase === 'stay' && (displayCase?.guidelines || displayCase?.doctorConclusion) ? (
+              <View style={styles.followBox}>
+                <Text style={styles.detailLabel}>While you stay</Text>
+                <Text style={styles.detailValue}>
+                  {displayCase.guidelines || displayCase.doctorConclusion}
+                </Text>
+              </View>
+            ) : null}
+
             <FacilityJourneyStepper
               caseData={displayCase}
-              countdownLabel={journeyPhase === 'waiting' ? countdownLabel : ''}
+              countdownLabel={journeyPhase === 'waiting_nurse' ? countdownLabel : ''}
+              hasFacility={hasFacility}
+              facilityName={facilityName}
             />
 
-            {journeyPhase !== 'completed' ? (
+            {liveVisit ? (
               <View style={styles.tipBox}>
                 <Ionicons name="information-circle-outline" size={16} color={COLORS.primary} />
                 <Text style={styles.tipText}>
                   If your condition worsens while waiting, tell triage staff immediately.
                 </Text>
               </View>
-            ) : null}
+            ) : !hasFacility ? (
+              <TouchableOpacity
+                style={styles.startBtn}
+                onPress={() => openFacilitySelection()}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.startBtnText}>Choose facility</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.startBtn}
+                onPress={() => openPatientTab('assessment')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.startBtnText}>Start assessment</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons name="git-network-outline" size={40} color={COLORS.textTertiary} />
-            <Text style={styles.emptyTitle}>No active journey</Text>
-            <Text style={styles.emptySub}>
-              Start an assessment and your live queue countdown will appear here.
-            </Text>
-            <TouchableOpacity
-              style={styles.startBtn}
-              onPress={() => openPatientTab('assessment')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.startBtnText}>Check Symptoms</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         <View style={{ height: LAYOUT.bottomTabClearance }} />
       </ScrollView>
@@ -560,6 +624,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
     color: COLORS.textPrimary,
+    marginBottom: 4,
+  },
+  sectionHint: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 17,
     marginBottom: 12,
   },
 
@@ -570,6 +640,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.borderLight,
     marginBottom: 10,
+    alignItems: 'center',
+    gap: 8,
   },
   historyEmptyText: {
     fontSize: 13,
@@ -614,6 +686,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   detailValue: { fontSize: 13, color: COLORS.textPrimary, lineHeight: 19 },
+  followBox: {
+    backgroundColor: COLORS.primaryVeryLight,
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  historyTreeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginTop: 4,
+  },
 
   activeCard: {
     backgroundColor: COLORS.white,
@@ -625,6 +711,7 @@ const styles = StyleSheet.create({
   },
   activeCardCall: { borderLeftColor: '#16A34A' },
   activeCardAttended: { borderLeftColor: COLORS.primary },
+  activeCardStay: { borderLeftColor: '#0EA5E9' },
   activeCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
