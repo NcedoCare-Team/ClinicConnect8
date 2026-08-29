@@ -3,7 +3,7 @@ import { auth } from '../../firebase';
 const API_CONFIG = {
   // BASE_URL: 'http://YOUR_LOCAL_IP:5000',   
 
-  BASE_URL: 'http://10.0.0.106:5000',    // <-- Replace with your IP like shown above
+  BASE_URL: 'http://192.168.68.115:5000',    // <-- Replace with your IP like shown above
   TIMEOUT: 90000,
 };
 

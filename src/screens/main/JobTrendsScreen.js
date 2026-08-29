@@ -1,4 +1,4 @@
-// Care Journey — summary + past visits, then live queue journey with countdown.
+// Care Journey — Live visit roadmap and signed-out History, as header subtabs.
 // Patients never see triage colour codes.
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -24,6 +24,7 @@ import {
   formatCountdown,
 } from '../../utils/queueWait';
 import FacilityJourneyStepper from '../../components/FacilityJourneyStepper';
+import { useLocalSearchParams } from 'expo-router';
 import { openPatientTab, openFacilitySelection } from '../../navigation/openPatientTab';
 import { useFacility } from '../../contexts/FacilityContext';
 import {
@@ -131,6 +132,7 @@ function liveSubForPhase(phase) {
 
 export default function JobTrendsScreen({ navigation }) {
   const { hasFacility, facilityName } = useFacility();
+  const routeParams = useLocalSearchParams();
   const [activeCase, setActiveCase] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -140,6 +142,12 @@ export default function JobTrendsScreen({ navigation }) {
   const [patient, setPatient] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [waitAnchor, setWaitAnchor] = useState(null); // { at, mins }
+  const [journeyTab, setJourneyTab] = useState('live');
+
+  useEffect(() => {
+    const tab = Array.isArray(routeParams.tab) ? routeParams.tab[0] : routeParams.tab;
+    if (tab === 'live' || tab === 'history') setJourneyTab(tab);
+  }, [routeParams.tab]);
 
   const uid = auth.currentUser?.uid;
 
@@ -286,10 +294,19 @@ export default function JobTrendsScreen({ navigation }) {
     <View style={styles.container}>
       <ScreenHeader
         title="My Care Journey"
-        subtitle="Past visits, live visit steps, and follow-up from your doctor"
+        subtitle={journeyTab === 'live'
+          ? 'Follow your current visit step by step'
+          : 'Signed-out visits and care to follow'}
+        tabs={[
+          { id: 'live', label: 'Live journey', dot: liveVisit },
+          { id: 'history', label: 'History', badge: sealedCount || undefined },
+        ]}
+        activeTab={journeyTab}
+        onTabChange={setJourneyTab}
       />
 
       <ScrollView
+        key={journeyTab}
         contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl
@@ -300,14 +317,15 @@ export default function JobTrendsScreen({ navigation }) {
         }
         showsVerticalScrollIndicator={false}
       >
-        {loadError ? (
+        {loadError && journeyTab === 'live' ? (
           <View style={styles.errorCard}>
             <Ionicons name="warning-outline" size={18} color="#B45309" />
             <Text style={styles.errorText}>{loadError}</Text>
           </View>
         ) : null}
 
-        {/* ── Summary card ── */}
+        {journeyTab === 'live' ? (
+        <>
         <LinearGradient
           colors={[COLORS.primaryDark, COLORS.primary]}
           start={{ x: 0, y: 0 }}
@@ -355,8 +373,105 @@ export default function JobTrendsScreen({ navigation }) {
           </View>
         </LinearGradient>
 
-        {/* ── History ── */}
-        <Text style={styles.sectionTitle}>History</Text>
+        <Text style={styles.sectionHint}>
+          Your current visit as a step-by-step roadmap. Signed-out visits move to History.
+        </Text>
+
+        <View
+            style={[
+              styles.activeCard,
+              journeyPhase === 'stay' && styles.activeCardStay,
+              (journeyPhase === 'see_nurse' || journeyPhase === 'see_doctor') && styles.activeCardAttended,
+            ]}
+          >
+            <View style={styles.activeCardHeader}>
+              <View style={[styles.statusPill, { backgroundColor: statusMeta.bg }]}>
+                <Ionicons name={statusMeta.icon} size={14} color={statusMeta.color} />
+                <Text style={[styles.statusPillText, { color: statusMeta.color }]}>
+                  {statusMeta.label}
+                </Text>
+              </View>
+              {(displayCase?.facilityName || facilityName) ? (
+                <Text style={styles.facilityChip} numberOfLines={1}>
+                  {displayCase?.facilityName || facilityName}
+                </Text>
+              ) : null}
+            </View>
+
+            <Text style={styles.activeCardTitle}>
+              {liveTitleForPhase(journeyPhase, hasFacility)}
+            </Text>
+            <Text style={styles.activeCardSub}>
+              {liveSubForPhase(journeyPhase)}
+            </Text>
+
+            {journeyPhase === 'waiting_nurse' && displayCase ? (
+              <View style={styles.statsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statValue}>#{displayCase.queuePosition || '—'}</Text>
+                  <Text style={styles.statLabel}>Position</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statBox}>
+                  <Text style={[styles.statValue, styles.countdownValue]}>
+                    {countdownLabel}
+                  </Text>
+                  <Text style={styles.statLabel}>Countdown</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statBox}>
+                  <Text style={styles.statValueSmall}>
+                    {liveWaitLabel}
+                  </Text>
+                  <Text style={styles.statLabel}>Est. wait</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {journeyPhase === 'stay' && (displayCase?.guidelines || displayCase?.doctorConclusion) ? (
+              <View style={styles.followBox}>
+                <Text style={styles.detailLabel}>While you stay</Text>
+                <Text style={styles.detailValue}>
+                  {displayCase.guidelines || displayCase.doctorConclusion}
+                </Text>
+              </View>
+            ) : null}
+
+            <FacilityJourneyStepper
+              caseData={displayCase}
+              countdownLabel={journeyPhase === 'waiting_nurse' ? countdownLabel : ''}
+              hasFacility={hasFacility}
+              facilityName={facilityName}
+            />
+
+            {liveVisit ? (
+              <View style={styles.tipBox}>
+                <Ionicons name="information-circle-outline" size={16} color={COLORS.primary} />
+                <Text style={styles.tipText}>
+                  If your condition worsens while waiting, tell triage staff immediately.
+                </Text>
+              </View>
+            ) : !hasFacility ? (
+              <TouchableOpacity
+                style={styles.startBtn}
+                onPress={() => openFacilitySelection()}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.startBtnText}>Choose facility</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.startBtn}
+                onPress={() => openPatientTab('assessment')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.startBtnText}>Start assessment</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </>
+        ) : (
+        <>
         <Text style={styles.sectionHint}>
           Signed-out visits with the doctor's conclusion and anything you need to follow.
         </Text>
@@ -454,105 +569,8 @@ export default function JobTrendsScreen({ navigation }) {
             );
           })
         )}
-
-        {/* ── Live journey ── */}
-        <Text style={[styles.sectionTitle, { marginTop: 22 }]}>Live journey</Text>
-        <Text style={styles.sectionHint}>
-          Your current visit as a step-by-step roadmap. Signed-out visits leave this list and appear in History.
-        </Text>
-
-        <View
-            style={[
-              styles.activeCard,
-              journeyPhase === 'stay' && styles.activeCardStay,
-              (journeyPhase === 'see_nurse' || journeyPhase === 'see_doctor') && styles.activeCardAttended,
-            ]}
-          >
-            <View style={styles.activeCardHeader}>
-              <View style={[styles.statusPill, { backgroundColor: statusMeta.bg }]}>
-                <Ionicons name={statusMeta.icon} size={14} color={statusMeta.color} />
-                <Text style={[styles.statusPillText, { color: statusMeta.color }]}>
-                  {statusMeta.label}
-                </Text>
-              </View>
-              {(displayCase?.facilityName || facilityName) ? (
-                <Text style={styles.facilityChip} numberOfLines={1}>
-                  {displayCase?.facilityName || facilityName}
-                </Text>
-              ) : null}
-            </View>
-
-            <Text style={styles.activeCardTitle}>
-              {liveTitleForPhase(journeyPhase, hasFacility)}
-            </Text>
-            <Text style={styles.activeCardSub}>
-              {liveSubForPhase(journeyPhase)}
-            </Text>
-
-            {journeyPhase === 'waiting_nurse' && displayCase ? (
-              <View style={styles.statsRow}>
-                <View style={styles.statBox}>
-                  <Text style={styles.statValue}>#{displayCase.queuePosition || '—'}</Text>
-                  <Text style={styles.statLabel}>Position</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statBox}>
-                  <Text style={[styles.statValue, styles.countdownValue]}>
-                    {countdownLabel}
-                  </Text>
-                  <Text style={styles.statLabel}>Countdown</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statBox}>
-                  <Text style={styles.statValueSmall}>
-                    {liveWaitLabel}
-                  </Text>
-                  <Text style={styles.statLabel}>Est. wait</Text>
-                </View>
-              </View>
-            ) : null}
-
-            {journeyPhase === 'stay' && (displayCase?.guidelines || displayCase?.doctorConclusion) ? (
-              <View style={styles.followBox}>
-                <Text style={styles.detailLabel}>While you stay</Text>
-                <Text style={styles.detailValue}>
-                  {displayCase.guidelines || displayCase.doctorConclusion}
-                </Text>
-              </View>
-            ) : null}
-
-            <FacilityJourneyStepper
-              caseData={displayCase}
-              countdownLabel={journeyPhase === 'waiting_nurse' ? countdownLabel : ''}
-              hasFacility={hasFacility}
-              facilityName={facilityName}
-            />
-
-            {liveVisit ? (
-              <View style={styles.tipBox}>
-                <Ionicons name="information-circle-outline" size={16} color={COLORS.primary} />
-                <Text style={styles.tipText}>
-                  If your condition worsens while waiting, tell triage staff immediately.
-                </Text>
-              </View>
-            ) : !hasFacility ? (
-              <TouchableOpacity
-                style={styles.startBtn}
-                onPress={() => openFacilitySelection()}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.startBtnText}>Choose facility</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.startBtn}
-                onPress={() => openPatientTab('assessment')}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.startBtnText}>Start assessment</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+        </>
+        )}
 
         <View style={{ height: LAYOUT.bottomTabClearance }} />
       </ScrollView>
@@ -620,12 +638,6 @@ const styles = StyleSheet.create({
   summaryStatLbl: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
   summaryStatDiv: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
 
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
   sectionHint: {
     fontSize: 12,
     color: COLORS.textSecondary,

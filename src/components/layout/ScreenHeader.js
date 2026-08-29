@@ -68,7 +68,12 @@ export function ScreenHeader({
   statusDot,
   statusLabel,
   useLogo,
+  tabs,
+  activeTab,
+  onTabChange,
 }) {
+  const hasTabs = Array.isArray(tabs) && tabs.length > 0;
+
   return (
     <View style={styles.screenHeaderWrap}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
@@ -76,7 +81,7 @@ export function ScreenHeader({
         colors={[COLORS.primary, COLORS.primaryDark]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={styles.screenHeader}>
+        style={[styles.screenHeader, hasTabs && styles.screenHeaderWithTabs]}>
         <HeaderDecorations light />
 
         <View style={styles.screenTopRow}>
@@ -101,6 +106,38 @@ export function ScreenHeader({
             </TouchableOpacity>
           )}
         </View>
+
+        {hasTabs ? (
+          <View style={styles.headerTabs}>
+            {tabs.map((tab) => {
+              const selected = tab.id === activeTab;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[styles.headerTab, selected && styles.headerTabActive]}
+                  onPress={() => onTabChange?.(tab.id)}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.headerTabInner}>
+                    {tab.dot ? (
+                      <View style={[styles.headerTabDot, selected && styles.headerTabDotActive]} />
+                    ) : null}
+                    <Text style={[styles.headerTabText, selected && styles.headerTabTextActive]}>
+                      {tab.label}
+                    </Text>
+                    {tab.badge != null && tab.badge !== '' ? (
+                      <View style={[styles.headerTabBadge, selected && styles.headerTabBadgeActive]}>
+                        <Text style={[styles.headerTabBadgeText, selected && styles.headerTabBadgeTextActive]}>
+                          {tab.badge}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
       </LinearGradient>
     </View>
   );
@@ -235,6 +272,61 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
+  screenHeaderWithTabs: { paddingBottom: 14 },
+  headerTabs: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(15, 23, 42, 0.22)',
+    borderRadius: 14,
+    padding: 4,
+    marginTop: 16,
+    zIndex: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  headerTab: {
+    flex: 1,
+    borderRadius: 11,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTabActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  headerTabInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerTabDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  headerTabDotActive: { backgroundColor: COLORS.primary },
+  headerTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.82)',
+  },
+  headerTabTextActive: { color: COLORS.primaryDark },
+  headerTabBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  headerTabBadgeActive: { backgroundColor: COLORS.primaryVeryLight },
+  headerTabBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  headerTabBadgeTextActive: { color: COLORS.primary },
   screenTopRow: {
     flexDirection: 'row',
     alignItems: 'center',

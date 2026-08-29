@@ -43,8 +43,10 @@ export function openPatientAssessment(screen = 'AssessmentMain') {
   router.navigate(`/(app)/assessment/${screen}`);
 }
 
-export function openPatientJourney(screen = 'JourneyMain') {
-  router.navigate(`/(app)/journey/${screen}`);
+export function openPatientJourney(screen = 'JourneyMain', params) {
+  const pathname = `/(app)/journey/${screen}`;
+  if (params) router.navigate({ pathname, params });
+  else router.navigate(pathname);
 }
 
 export function openPatientInsights(screen = 'InsightsMain') {

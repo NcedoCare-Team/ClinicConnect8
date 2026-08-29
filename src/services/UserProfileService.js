@@ -32,7 +32,6 @@ const DEFAULT_PROFILE = {
   chronicConditions: [],
   allergies: '',
   currentMedications: '',
-  healthData: null,
   targetRole: '',
   skills: [],
   field: '',
@@ -64,7 +63,6 @@ function toFirestorePatient(merged) {
     chronicConditions: merged.chronicConditions,
     allergies: merged.allergies,
     currentMedications: merged.currentMedications,
-    healthData: merged.healthData,
     updatedAt: merged.updatedAt,
   };
 }

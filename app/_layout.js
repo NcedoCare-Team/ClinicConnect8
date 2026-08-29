@@ -12,7 +12,6 @@ import { FacilityProvider } from '../src/contexts/FacilityContext';
 import { COLORS } from '../src/constants/colors';
 import { StorageService } from '../src/utils/storage';
 import { UserProfileService } from '../src/services/UserProfileService';
-import { SleepTrackingService } from '../src/services/SleepTrackingService';
 
 const NcedoTheme = {
   ...DefaultTheme,
@@ -38,11 +37,6 @@ function AuthGate() {
       setOnboardingDone(done);
     });
     return unsub;
-  }, []);
-
-  useEffect(() => {
-    SleepTrackingService.init();
-    return () => SleepTrackingService.destroy();
   }, []);
 
   useEffect(() => {

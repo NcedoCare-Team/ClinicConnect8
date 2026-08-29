@@ -44,7 +44,6 @@ const PROFILE_SECTIONS = [
     title: 'Connected Care',
     rows: [
       { icon: 'business-outline', label: 'Healthcare Facility', sub: 'View or change facility', key: 'facility' },
-      { icon: 'watch-outline', label: 'Connected Health Devices', sub: 'Heart rate, temperature, activity', key: 'devices' },
     ],
   },
   {
