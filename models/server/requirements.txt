@@ -1,5 +1,8 @@
 flask
 flask-cors
+flask-sock
+gevent
+gevent-websocket
 pillow
 google-generativeai
 python-dotenv

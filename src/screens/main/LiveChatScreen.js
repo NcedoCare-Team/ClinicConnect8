@@ -104,7 +104,7 @@ export default function LiveChatScreen() {
   const { facilityName, facilityId } = useFacility();
 
   const [sessionState, setSessionState] = useState(STATE.CONNECTING);
-  const [statusText, setStatusText] = useState('Connecting to Dr. Ncedo…');
+  const [statusText, setStatusText] = useState(`Connecting to ${getLiveRelayUrl()}…`);
   const [isMuted, setIsMuted] = useState(false);
   const [showTextInput, setShowTextInput] = useState(false);
   const [typedMessage, setTypedMessage] = useState('');
@@ -477,7 +477,7 @@ export default function LiveChatScreen() {
           if (!isMounted) return;
           Alert.alert(
             'Could not start live assessment',
-            err?.message || `Unable to reach ${getLiveRelayUrl()}. Start models/server/app.py.`,
+            err?.message || `Unable to reach ${getLiveRelayUrl()}. Start app.py and live_server.py.`,
             [{ text: 'OK', onPress: () => goBackOrHome() }]
           );
         };
@@ -492,7 +492,7 @@ export default function LiveChatScreen() {
         console.log('[LiveChat] Connection setup failed:', err);
         Alert.alert(
           'Connection error',
-          err?.message || `Could not reach ${getLiveRelayUrl()}. Start the same Flask backend you use for text chat (app.py).`,
+          err?.message || `Could not reach ${getLiveRelayUrl()}. Start app.py and live_server.py.`,
           [{ text: 'OK', onPress: () => goBackOrHome() }]
         );
       }

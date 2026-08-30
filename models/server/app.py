@@ -7,6 +7,8 @@ import google.generativeai as genai
 from datetime import datetime
 import os
 import json
+import socket
+import threading
 from dotenv import load_dotenv
 import tempfile
 import time
@@ -27,6 +29,16 @@ load_dotenv()  # allow a local models/server/.env to override
 
 app = Flask(__name__)
 CORS(app)
+
+# Phone → ws://<lan-ip>:5000/live → this proxy → ws://127.0.0.1:8765 (live_server.py)
+# Same port as the working text chatbot so Windows Firewall / Expo Go can reach it.
+try:
+    from flask_sock import Sock
+    sock = Sock(app)
+except Exception:
+    sock = None
+
+LIVE_UPSTREAM = os.getenv("LIVE_UPSTREAM_URL", "ws://127.0.0.1:8765")
 
 # Text/chat models: new Gemini keys cannot call gemini-2.5-flash (404).
 # Official replacement from Google: gemini-3.6-flash.
@@ -739,6 +751,83 @@ def health_check():
     }), 200
 
 
+@app.route('/live-health', methods=['GET'])
+def live_health():
+    """Reachable from the phone over the same HTTP port as text chat."""
+    port = int(os.getenv("LIVE_RELAY_PORT", "8765"))
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1.5):
+            return jsonify({
+                "status": "ok",
+                "live_server": "up",
+                "proxy": "/live",
+                "upstream": f"ws://127.0.0.1:{port}",
+            }), 200
+    except OSError as e:
+        return jsonify({
+            "status": "down",
+            "live_server": "down",
+            "proxy": "/live",
+            "error": str(e),
+            "hint": "Start the second process: py live_server.py",
+        }), 503
+
+
+def _bridge_live_socket(phone_ws):
+    """Bidirectional bridge: React Native ↔ live_server.py on localhost:8765."""
+    from websockets.sync.client import connect as ws_connect
+
+    print(f"[live-proxy] phone connected — bridging to {LIVE_UPSTREAM}")
+    try:
+        upstream = ws_connect(LIVE_UPSTREAM, max_size=16 * 1024 * 1024, open_timeout=8)
+    except Exception as e:
+        print(f"[live-proxy] cannot reach live_server.py: {e}")
+        try:
+            phone_ws.send(json.dumps({
+                "error": "live_server.py is not running on port 8765",
+                "detail": str(e),
+            }))
+        except Exception:
+            pass
+        return
+
+    stop = threading.Event()
+
+    def upstream_to_phone():
+        try:
+            for msg in upstream:
+                if stop.is_set():
+                    break
+                phone_ws.send(msg)
+        except Exception:
+            pass
+        stop.set()
+
+    reader = threading.Thread(target=upstream_to_phone, daemon=True)
+    reader.start()
+    try:
+        while not stop.is_set():
+            data = phone_ws.receive()
+            if data is None:
+                break
+            upstream.send(data)
+    except Exception:
+        pass
+    finally:
+        stop.set()
+        try:
+            upstream.close()
+        except Exception:
+            pass
+        print("[live-proxy] phone disconnected")
+
+
+if sock is not None:
+    @sock.route("/live")
+    def live_ws(ws):
+        _bridge_live_socket(ws)
+
+
 @app.route('/api/triage', methods=['POST'])
 def triage():
     """
@@ -1125,9 +1214,21 @@ if __name__ == '__main__':
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Triage Endpoint: http://0.0.0.0:5000/api/triage")
     print(f"Chat Endpoint:   http://0.0.0.0:5000/api/chatbot")
+    print(f"Live Voice WS:   ws://0.0.0.0:5000/live  (proxied → live_server.py :8765)")
+    print(f"Live Health:     http://0.0.0.0:5000/live-health")
     print(f"Health Check:    http://0.0.0.0:5000/health")
     print(f"Model: {TEXT_MODEL}")
-    print(f"NOTE: Live voice runs separately — start it with: py live_server.py")
+    print(f"NOTE: Also run:  py live_server.py")
     print(f"{'='*60}\n")
 
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=True)
+    # Werkzeug cannot complete a React Native / OkHttp WebSocket handshake
+    # (HTTP 400). Serve HTTP + /live with gevent-websocket, same as a LAN
+    # phone already uses for text chat on port 5000.
+    try:
+        from gevent.pywsgi import WSGIServer
+        from geventwebsocket.handler import WebSocketHandler
+        print("Serving with gevent-websocket on port 5000 (phone-compatible /live)\n")
+        WSGIServer(("0.0.0.0", 5000), app, handler_class=WebSocketHandler).serve_forever()
+    except ImportError:
+        print("gevent-websocket not installed — Flask dev server (live /live may fail on phone)")
+        app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=False)

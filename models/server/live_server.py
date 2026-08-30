@@ -44,6 +44,7 @@ import tempfile
 import time
 import wave
 from datetime import datetime
+from http import HTTPStatus
 import urllib.request
 import urllib.error
 
@@ -718,7 +719,8 @@ async def main():
     print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Model:   {GEMINI_MODEL}")
     print(f"  API key: {GEMINI_KEY_SOURCE} ({GEMINI_API_KEY[:6]}…{GEMINI_API_KEY[-4:]})")
-    print(f"  Listen:  ws://{RELAY_HOST}:{RELAY_PORT}")
+    print(f"  Listen:  ws://{RELAY_HOST}:{RELAY_PORT}  (localhost only from app.py)")
+    print(f"  Phone:   ws://<lan-ip>:5000/live  via app.py proxy — do not expose 8765")
     print(f"  ffmpeg:  {_find_ffmpeg() or 'NOT FOUND — Android audio will fail'}")
     print(f"  Persona: Dr. Ncedo (POPIA-compliant Clinical Triage Agent)")
     print(f"  Tools:   get_clinical_attribute, submit_triage_case")
@@ -737,6 +739,21 @@ async def main():
         except NotImplementedError:
             pass
 
+    async def _http_health(connection, request):
+        # Allow a phone browser to hit http://<lan-ip>:8765/health to see if
+        # this extra port is firewalled (chat on :5000 working does not prove :8765).
+        path = getattr(request, "path", "")
+        upgrade = ""
+        headers = getattr(request, "headers", None)
+        if headers is not None:
+            try:
+                upgrade = headers.get("Upgrade", "") or headers.get("upgrade", "")
+            except Exception:
+                upgrade = ""
+        if path in ("/", "/health") and str(upgrade).lower() != "websocket":
+            return connection.respond(HTTPStatus.OK, '{"status":"ok","service":"ncedocare-live"}\n')
+        return None
+
     async with websockets.serve(
         handle_client,
         RELAY_HOST,
@@ -744,6 +761,7 @@ async def main():
         max_size=16 * 1024 * 1024,
         ping_interval=20,
         ping_timeout=20,
+        process_request=_http_health,
     ):
         print(f"[{_ts()}] Server ready — waiting for client connections…\n")
         try:

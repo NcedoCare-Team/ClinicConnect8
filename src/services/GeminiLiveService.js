@@ -16,12 +16,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { API_CONFIG } from './ApiService';
 
 export function getLiveRelayUrl() {
-  // Same host as the text chatbot (API_CONFIG.BASE_URL), but the Gemini Live
-  // voice relay is a SEPARATE server (models/server/live_server.py) on its own
-  // WebSocket port (8765). Reuse the host, swap protocol + port.
-  const base = API_CONFIG.BASE_URL.replace(/^http/, 'ws'); // ws://192.168.68.115:5000
-  const host = base.replace(/:\d+$/, '').replace(/\/+$/, ''); // ws://192.168.68.115
-  return `${host}:8765`;
+  // Same host AND port as the working text chatbot.
+  // VisionAlly used ws://<lan-ip>:8765, but Windows Firewall often drops that
+  // extra port from the phone while HTTP :5000 already works. Flask now
+  // accepts the React Native socket at /live and proxies it to live_server.py
+  // on localhost:8765 (same two-process setup, reachable path).
+  const httpBase = (API_CONFIG.BASE_URL || '').replace(/\/+$/, '');
+  const host = httpBase.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+  return `ws://${host}:5000/live`;
 }
 
 const OUTPUT_SAMPLE_RATE = 24000; // Gemini Live outputs 24 kHz PCM
@@ -109,7 +111,7 @@ export class GeminiLiveService {
       };
 
       const timer = setTimeout(() => {
-        fail(new Error(`Timed out connecting to ${relayUrl}. Start the live voice server: py models/server/live_server.py`));
+        fail(new Error(`Timed out connecting to ${relayUrl}. Start both servers: py app.py  and  py live_server.py`));
         try { this._ws?.close(); } catch { /* ignore */ }
       }, 15000);
 
@@ -146,7 +148,7 @@ export class GeminiLiveService {
 
       this._ws.onerror = (err) => {
         console.log('[GeminiLive] WS error:', err, 'url=', relayUrl);
-        fail(new Error(`Cannot reach ${relayUrl}. Start the live voice server: py models/server/live_server.py`));
+        fail(new Error(`Cannot reach ${relayUrl}. Start both servers: py app.py  and  py live_server.py`));
       };
 
       this._ws.onclose = (evt) => {
@@ -154,7 +156,7 @@ export class GeminiLiveService {
         this._isConnected     = false;
         this._isSetupComplete = false;
         if (!settled) {
-          fail(new Error(`Live connection closed (${evt.code || 'no code'}). Is live_server.py running at ${relayUrl}?`));
+          fail(new Error(`Live connection closed (${evt.code || 'no code'}). Is app.py running, and live_server.py on port 8765?`));
         } else if (evt.code !== 1000 && evt.code !== 1001) {
           if (this.onSessionEnded) this.onSessionEnded(evt.code, evt.reason);
         }
