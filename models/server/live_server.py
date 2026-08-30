@@ -17,18 +17,32 @@
 #        backend persists to Firestore -> AI speaks final closing reassurance ->
 #        client transitions patient to queue / journey view.
 #
-# Usage:
-#   pip install websockets google-generativeai python-dotenv
-#   python live_server.py
+# Usage (STANDALONE — run this file in its own terminal, separate from app.py):
+#   pip install websockets python-dotenv imageio-ffmpeg
+#   py live_server.py
+#
+# Audio path:
+#   The Expo client cannot record raw PCM on Android (MediaRecorder produces
+#   M4A/AAC), so the client sends complete utterances as WAV (iOS) or M4A
+#   (Android) and THIS server converts them to the raw 16 kHz mono 16-bit PCM
+#   that the Gemini Live API requires. Automatic (server-side) voice activity
+#   detection is disabled; the client marks each utterance with explicit
+#   activityStart / activityEnd signals per the Live API reference
+#   (https://ai.google.dev/api/live).
 # ─────────────────────────────────────────────────────────────────────────────
 
 import asyncio
+import io
 import json
 import base64
 import os
+import shutil
 import signal
+import subprocess
 import sys
+import tempfile
 import time
+import wave
 from datetime import datetime
 import urllib.request
 import urllib.error
@@ -36,11 +50,32 @@ import urllib.error
 import websockets
 from dotenv import load_dotenv
 
-load_dotenv()
+# Windows cp1252 consoles raise UnicodeEncodeError on emoji logs, which would
+# abort the live relay mid-connection. Force UTF-8 output.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+# models/server/live_server.py → repo root .env (keys + model names live there)
+_SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_SERVER_DIR, "..", ".."))
+load_dotenv(os.path.join(_REPO_ROOT, ".env"))
+load_dotenv()  # allow a local models/server/.env to override
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-GEMINI_API_KEY = os.getenv("GEMINI_LIVE_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-latest")
+# Use the dedicated live key when set; fall back to the text-chat key.
+_LIVE_KEY = os.getenv("GEMINI_LIVE_API_KEY", "").strip()
+_TEXT_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_API_KEY = _LIVE_KEY or _TEXT_KEY
+GEMINI_KEY_SOURCE = "GEMINI_LIVE_API_KEY" if _LIVE_KEY else "GEMINI_API_KEY"
+
+# Official Live API model from https://ai.google.dev/gemini-api/docs/models
+# and https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket
+# Do NOT use gemini-3.6-flash here — it is text-only and rejects bidi/live.
+# Do NOT use gemini-2.5-flash-native-audio-latest — not the current documented ID.
+GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
 
 GEMINI_WS_URL = (
     "wss://generativelanguage.googleapis.com/ws/"
@@ -50,6 +85,95 @@ GEMINI_WS_URL = (
 
 RELAY_HOST = "0.0.0.0"
 RELAY_PORT = int(os.getenv("LIVE_RELAY_PORT", "8765"))
+
+# ─── Client Audio → 16 kHz PCM Conversion ─────────────────────────────────────
+# Gemini Live accepts ONLY raw little-endian 16-bit PCM @ 16 kHz as audio input.
+
+_FFMPEG_EXE = None
+
+
+def _find_ffmpeg():
+    """Locate ffmpeg: FFMPEG_PATH env → PATH → bundled imageio-ffmpeg binary."""
+    global _FFMPEG_EXE
+    if _FFMPEG_EXE:
+        return _FFMPEG_EXE
+    exe = os.getenv("FFMPEG_PATH") or shutil.which("ffmpeg")
+    if not exe:
+        try:
+            import imageio_ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            exe = None
+    _FFMPEG_EXE = exe
+    return exe
+
+
+def _wav_to_pcm16k(raw):
+    """Extract PCM from a WAV container if it is already 16-bit mono 16 kHz."""
+    with wave.open(io.BytesIO(raw), "rb") as wf:
+        if wf.getsampwidth() != 2 or wf.getnchannels() != 1 or wf.getframerate() != 16000:
+            return None  # unusual format — fall through to ffmpeg
+        return wf.readframes(wf.getnframes())
+
+
+def _ffmpeg_to_pcm16k(raw, suffix):
+    """Decode any compressed audio (M4A/AAC/3GP/WEBM/…) to raw 16 kHz mono PCM."""
+    exe = _find_ffmpeg()
+    if not exe:
+        raise RuntimeError("ffmpeg not found. Install with: py -m pip install imageio-ffmpeg")
+    in_path = None
+    try:
+        # MediaRecorder M4A keeps its moov atom at the end, so ffmpeg needs a
+        # seekable file — stdin piping is not reliable here.
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+            f.write(raw)
+            in_path = f.name
+        proc = subprocess.run(
+            [
+                exe, "-hide_banner", "-loglevel", "error", "-i", in_path,
+                "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",
+                "pipe:1",
+            ],
+            capture_output=True,
+            timeout=20,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.decode("utf-8", errors="ignore")[:300])
+        return proc.stdout
+    finally:
+        if in_path:
+            try:
+                os.unlink(in_path)
+            except OSError:
+                pass
+
+
+_MIME_SUFFIX = {
+    "audio/mp4": ".m4a",
+    "audio/m4a": ".m4a",
+    "audio/x-m4a": ".m4a",
+    "audio/aac": ".aac",
+    "audio/3gpp": ".3gp",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/webm": ".webm",
+}
+
+
+def convert_to_pcm16k_b64(b64_data, mime):
+    """Convert base64 client audio of any supported container to base64 raw PCM."""
+    raw = base64.b64decode(b64_data)
+    mime_base = (mime or "").split(";")[0].strip().lower()
+
+    pcm = None
+    if mime_base in ("audio/wav", "audio/x-wav") or raw[:4] == b"RIFF":
+        try:
+            pcm = _wav_to_pcm16k(raw)
+        except Exception:
+            pcm = None
+    if pcm is None:
+        pcm = _ffmpeg_to_pcm16k(raw, _MIME_SUFFIX.get(mime_base, ".bin"))
+    return base64.b64encode(pcm).decode("ascii"), len(pcm)
 
 # ─── Clinical Instructions & Tool Declarations ─────────────────────────────────
 
@@ -332,12 +456,16 @@ async def handle_client(client_ws):
                             }
                         }
                     },
-                    "thinkingConfig": {
-                        "thinkingBudget": 0,
-                    },
                 },
                 "systemInstruction": {
                     "parts": [{"text": system_instruction}],
+                },
+                # The client records complete utterances and marks them with
+                # explicit activityStart/activityEnd, so server-side automatic
+                # voice activity detection MUST be disabled (Live API rule:
+                # activity signals are only legal when automatic detection is off).
+                "realtimeInputConfig": {
+                    "automaticActivityDetection": {"disabled": True},
                 },
                 "tools": [
                     {
@@ -347,11 +475,6 @@ async def handle_client(client_ws):
                         ]
                     }
                 ],
-                "realtimeInputConfig": {
-                    "automaticActivityDetection": {
-                        "disabled": True,
-                    },
-                },
             }
         }
 
@@ -418,25 +541,53 @@ async def handle_client(client_ws):
 
 
 async def _relay_client_to_gemini(client_ws, gemini_ws):
-    """Forward messages from the React Native client to Gemini."""
+    """Forward messages from the React Native client to Gemini.
+
+    Audio frames are intercepted: the client sends whole utterances as WAV
+    (iOS) or M4A (Android), which are converted here to the raw 16 kHz mono
+    PCM format Gemini Live requires before being forwarded.
+    """
     try:
         async for message in client_ws:
+            parsed = None
             try:
                 parsed = json.loads(message)
-                if 'realtimeInput' in parsed:
-                    ri = parsed['realtimeInput']
-                    if 'audio' in ri:
-                        pass # avoid flooding logs on audio stream
-                    elif 'text' in ri:
-                        print(f"[{_ts()}] → Patient text input: {ri['text'][:80]}")
-                    elif 'activityStart' in ri:
-                        print(f"[{_ts()}] → User speaking (activityStart)")
-                    elif 'activityEnd' in ri:
-                        print(f"[{_ts()}] → User finished speaking (activityEnd)")
-                elif 'clientContent' in parsed:
-                    print(f"[{_ts()}] → Client turn sent")
             except Exception:
                 pass
+
+            if parsed and 'realtimeInput' in parsed:
+                ri = parsed['realtimeInput']
+                audio = ri.get('audio')
+                mime = (audio or {}).get('mimeType', '')
+
+                if audio and not mime.startswith('audio/pcm'):
+                    # Convert WAV/M4A utterance to raw PCM off the event loop
+                    try:
+                        pcm_b64, pcm_len = await asyncio.to_thread(
+                            convert_to_pcm16k_b64, audio.get('data', ''), mime
+                        )
+                    except Exception as e:
+                        print(f"[{_ts()}] ⚠ Audio conversion failed ({mime}): {e}")
+                        continue  # drop the frame rather than feed Gemini garbage
+                    secs = pcm_len / 32000.0  # 16000 Hz * 2 bytes
+                    print(f"[{_ts()}] → Patient utterance: {mime} → PCM {secs:.1f}s")
+                    message = json.dumps({
+                        "realtimeInput": {
+                            "audio": {
+                                "mimeType": "audio/pcm;rate=16000",
+                                "data": pcm_b64,
+                            }
+                        }
+                    })
+                elif 'text' in ri:
+                    print(f"[{_ts()}] → Patient text input: {ri['text'][:80]}")
+                elif 'activityStart' in ri:
+                    print(f"[{_ts()}] → User speaking (activityStart)")
+                elif 'activityEnd' in ri:
+                    print(f"[{_ts()}] → User finished speaking (activityEnd)")
+            elif parsed and 'clientContent' in parsed:
+                print(f"[{_ts()}] → Client turn sent")
+
             await gemini_ws.send(message)
     except websockets.exceptions.ConnectionClosed:
         pass
@@ -566,9 +717,12 @@ async def main():
     print(f"{'═' * 60}")
     print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Model:   {GEMINI_MODEL}")
+    print(f"  API key: {GEMINI_KEY_SOURCE} ({GEMINI_API_KEY[:6]}…{GEMINI_API_KEY[-4:]})")
     print(f"  Listen:  ws://{RELAY_HOST}:{RELAY_PORT}")
+    print(f"  ffmpeg:  {_find_ffmpeg() or 'NOT FOUND — Android audio will fail'}")
     print(f"  Persona: Dr. Ncedo (POPIA-compliant Clinical Triage Agent)")
     print(f"  Tools:   get_clinical_attribute, submit_triage_case")
+    print(f"  NOTE:    Standalone server. Run app.py separately for text chat.")
     print(f"{'═' * 60}\n")
 
     stop = asyncio.get_event_loop().create_future()

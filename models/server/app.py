@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
 import io
+import sys
 import google.generativeai as genai
 from datetime import datetime
 import os
@@ -10,10 +11,27 @@ from dotenv import load_dotenv
 import tempfile
 import time
 
-load_dotenv()
+# Windows consoles default to cp1252 and crash on emoji in logs (UnicodeEncodeError),
+# which would abort the /live WebSocket handler. Force UTF-8 for all stdout/stderr.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+# models/server/app.py → repo root .env (keys + model names live there)
+_SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_SERVER_DIR, "..", ".."))
+load_dotenv(os.path.join(_REPO_ROOT, ".env"))
+load_dotenv()  # allow a local models/server/.env to override
 
 app = Flask(__name__)
 CORS(app)
+
+# Text/chat models: new Gemini keys cannot call gemini-2.5-flash (404).
+# Official replacement from Google: gemini-3.6-flash.
+# https://ai.google.dev/gemini-api/docs/models
+TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.6-flash")
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
@@ -32,7 +50,7 @@ except FileNotFoundError:
 
 # Model configuration
 model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
+    model_name=TEXT_MODEL,
     system_instruction=system_instruction
 )
 
@@ -364,7 +382,7 @@ def _normalize_fc_args(obj):
 
 def _build_triage_model():
     return genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
+        model_name=TEXT_MODEL,
         system_instruction=TRIAGE_INTERVIEW_INSTRUCTION,
         tools=[{
             "function_declarations": [
@@ -669,7 +687,7 @@ def generate_conversation_title(user_input, ai_response_text, image_present, aud
         )
         
         title_model = genai.GenerativeModel(
-            model_name='gemini-2.0-flash-exp',
+            model_name=TEXT_MODEL,
             system_instruction=title_system_instruction
         )
         
@@ -742,7 +760,7 @@ def triage():
             prompt += f"\n{context}"
 
         triage_model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name=TEXT_MODEL,
             system_instruction=system_instruction
         )
         response = triage_model.generate_content(
@@ -1083,7 +1101,7 @@ def analyse_document():
         uploaded = genai.upload_file(path=tmp_path, mime_type=mime_type)
         os.unlink(tmp_path)
 
-        doc_model = genai.GenerativeModel(model_name='gemini-2.5-flash')
+        doc_model = genai.GenerativeModel(model_name=TEXT_MODEL)
         response = doc_model.generate_content(
             [
                 uploaded,
@@ -1102,14 +1120,14 @@ def analyse_document():
 
 if __name__ == '__main__':
     print(f"\n{'='*60}")
-    print(f"NcedoCare AI Triage Backend Starting")
+    print(f"NcedoCare AI Triage Backend Starting (text chat / REST only)")
     print(f"{'='*60}")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Triage Endpoint: http://0.0.0.0:5000/api/triage")
     print(f"Chat Endpoint:   http://0.0.0.0:5000/api/chatbot")
     print(f"Health Check:    http://0.0.0.0:5000/health")
-    print(f"Model: gemini-2.5-flash")
-    print(f"Purpose: AI-Powered Patient Triage — NcedoCare")
+    print(f"Model: {TEXT_MODEL}")
+    print(f"NOTE: Live voice runs separately — start it with: py live_server.py")
     print(f"{'='*60}\n")
 
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=True)

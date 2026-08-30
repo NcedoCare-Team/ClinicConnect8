@@ -132,7 +132,17 @@ export default function HomeScreen({ navigation }) {
           showConnect={!facilityDisplay}
         />
 
-        {/* Primary Action Card — before Care Timeline */}
+        {/* Care Timeline */}
+        <View style={[styles.sectionHeader, { marginTop: 8 }]}>
+          <Text style={styles.sectionTitle}>Care Timeline</Text>
+          <TouchableOpacity onPress={() => openPatientJourney('JourneyMain', { tab: 'live' })}>
+            <Text style={styles.sectionLink}>View journey</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.sectionDesc}>
+          Live visit steps now, and signed-out visits with your doctor follow-up.
+        </Text>
+
         <TouchableOpacity
           style={styles.actionCardWrap}
           onPress={() => openPatientTab('assessment')}
@@ -155,17 +165,6 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="arrow-forward-circle" size={28} color="rgba(255,255,255,0.85)" />
           </LinearGradient>
         </TouchableOpacity>
-
-        {/* Care Timeline */}
-        <View style={[styles.sectionHeader, { marginTop: 8 }]}>
-          <Text style={styles.sectionTitle}>Care Timeline</Text>
-          <TouchableOpacity onPress={() => openPatientJourney('JourneyMain', { tab: 'live' })}>
-            <Text style={styles.sectionLink}>View journey</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.sectionDesc}>
-          Live visit steps now, and signed-out visits with your doctor follow-up.
-        </Text>
 
         {loading ? (
           <View style={styles.loadingRow}>
@@ -286,7 +285,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
   scrollContent: { paddingHorizontal: LAYOUT.screenPadding, paddingTop: 16 },
 
-  actionCardWrap: { marginBottom: 28, marginTop: 8, borderRadius: LAYOUT.cardRadius, overflow: 'hidden', ...cardShadow },
+  actionCardWrap: { marginBottom: 16, borderRadius: LAYOUT.cardRadius, overflow: 'hidden', ...cardShadow },
   actionCard: {
     flexDirection: 'row',
     alignItems: 'center',

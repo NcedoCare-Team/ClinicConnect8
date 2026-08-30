@@ -3,20 +3,25 @@
 // NcedoCare — Gemini Live Real-Time Voice Consultation Client Service
 //
 // Features:
-//   - Low-latency bidirectional WebSocket connection to Python relay server.
-//   - Audio streaming (16kHz PCM input / 24kHz PCM output -> WAV generation).
-//   - Text prompting and activity tracking (activityStart, activityEnd).
+//   - Bidirectional WebSocket connection to the standalone Python live relay
+//     (models/server/live_server.py, port 8765).
+//   - Utterance-based audio input: the full recorded file (WAV on iOS, M4A on
+//     Android) is sent with explicit activityStart/activityEnd markers; the
+//     relay transcodes it to the raw 16 kHz PCM Gemini Live requires.
+//   - 24 kHz PCM audio output buffered per turn -> playable WAV file.
 //   - Triage submission event listener (onTriageSubmitted) for seamless auto-close.
-//   - Live transcript events for real-time visual conversation display.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { API_CONFIG } from './ApiService';
 
-function getRelayUrl() {
-  const httpBase = API_CONFIG.BASE_URL; // e.g. "http://192.168.68.105:5000"
-  const host = httpBase.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-  return `ws://${host}:8765`;
+export function getLiveRelayUrl() {
+  // Same host as the text chatbot (API_CONFIG.BASE_URL), but the Gemini Live
+  // voice relay is a SEPARATE server (models/server/live_server.py) on its own
+  // WebSocket port (8765). Reuse the host, swap protocol + port.
+  const base = API_CONFIG.BASE_URL.replace(/^http/, 'ws'); // ws://192.168.68.115:5000
+  const host = base.replace(/:\d+$/, '').replace(/\/+$/, ''); // ws://192.168.68.115
+  return `${host}:8765`;
 }
 
 const OUTPUT_SAMPLE_RATE = 24000; // Gemini Live outputs 24 kHz PCM
@@ -67,7 +72,6 @@ export class GeminiLiveService {
     this.onTurnComplete    = null; // () => void
     this.onInterrupted     = null; // () => void
     this.onTriageSubmitted = null; // (data: { caseId, fallbackFields, conversationId, priority }) => void
-    this.onTranscript      = null; // (data: { role: 'ai'|'user', text: string, turnComplete?: boolean }) => void
     this.onSessionEnded    = null; // (code: number, reason: string) => void
     this.onError           = null; // (error: Error) => void
   }
@@ -83,7 +87,8 @@ export class GeminiLiveService {
         this._ws = null;
       }
 
-      const relayUrl = getRelayUrl();
+      const relayUrl = getLiveRelayUrl();
+      this._relayUrl = relayUrl;
       console.log('[GeminiLive] Connecting to relay:', relayUrl);
 
       try {
@@ -94,6 +99,19 @@ export class GeminiLiveService {
       }
 
       let settled = false;
+
+      const fail = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (this.onError) this.onError(err);
+        reject(err);
+      };
+
+      const timer = setTimeout(() => {
+        fail(new Error(`Timed out connecting to ${relayUrl}. Start the live voice server: py models/server/live_server.py`));
+        try { this._ws?.close(); } catch { /* ignore */ }
+      }, 15000);
 
       const setupPayload = typeof config === 'string'
         ? { systemInstruction: config, voiceName: 'Aoede' }
@@ -114,26 +132,29 @@ export class GeminiLiveService {
       };
 
       this._ws.onmessage = (evt) => {
-        this._msgQueue.push({ raw: evt.data, resolveSetup: resolve });
+        this._msgQueue.push({
+          raw: evt.data,
+          resolveSetup: () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+          },
+        });
         if (!this._processingQueue) this._drainQueue();
       };
 
       this._ws.onerror = (err) => {
-        if (settled) return;
-        settled = true;
-        console.log('[GeminiLive] WS error:', err);
-        const e = new Error('WebSocket error — verify relay server and internet connection');
-        if (this.onError) this.onError(e);
-        reject(e);
+        console.log('[GeminiLive] WS error:', err, 'url=', relayUrl);
+        fail(new Error(`Cannot reach ${relayUrl}. Start the live voice server: py models/server/live_server.py`));
       };
 
       this._ws.onclose = (evt) => {
         console.log('[GeminiLive] WS closed:', evt.code, evt.reason);
         this._isConnected     = false;
         this._isSetupComplete = false;
-        if (!settled && evt.code !== 1000 && evt.code !== 1001) {
-          settled = true;
-          if (this.onSessionEnded) this.onSessionEnded(evt.code, evt.reason);
+        if (!settled) {
+          fail(new Error(`Live connection closed (${evt.code || 'no code'}). Is live_server.py running at ${relayUrl}?`));
         } else if (evt.code !== 1000 && evt.code !== 1001) {
           if (this.onSessionEnded) this.onSessionEnded(evt.code, evt.reason);
         }
@@ -141,38 +162,28 @@ export class GeminiLiveService {
     });
   }
 
-  sendAudioChunk(b64Pcm) {
+  /**
+   * Send one complete spoken utterance to the relay.
+   *
+   * The relay converts WAV/M4A to the raw 16 kHz PCM Gemini requires.
+   * Automatic voice detection is disabled server-side, so every utterance
+   * must be framed with explicit activityStart / activityEnd markers.
+   *
+   * @param {string} b64Audio - base64 of the full recorded file (with container)
+   * @param {string} mimeType - 'audio/wav' (iOS) or 'audio/mp4' (Android)
+   */
+  sendAudioUtterance(b64Audio, mimeType) {
     if (!this.isReady) return;
+    this._send({ realtimeInput: { activityStart: {} } });
     this._send({
       realtimeInput: {
         audio: {
-          mimeType: 'audio/pcm;rate=16000',
-          data: b64Pcm,
+          mimeType,
+          data: b64Audio,
         },
       },
     });
-  }
-
-  sendActivityStart() {
-    if (!this.isReady) return;
-    this._send({ realtimeInput: { activityStart: {} } });
-  }
-
-  sendActivityEnd() {
-    if (!this.isReady) return;
     this._send({ realtimeInput: { activityEnd: {} } });
-  }
-
-  sendTextPrompt(text) {
-    if (!this.isReady) return;
-    this._send({
-      realtimeInput: {
-        text: text,
-      },
-    });
-    if (this.onTranscript) {
-      this.onTranscript({ role: 'user', text });
-    }
   }
 
   sendClientTurn(text) {
@@ -256,7 +267,6 @@ export class GeminiLiveService {
     }
 
     const parts = c.modelTurn?.parts ?? [];
-    let turnText = '';
     for (const p of parts) {
       if (p.inlineData?.data) {
         const mime = p.inlineData.mimeType || '';
@@ -264,13 +274,6 @@ export class GeminiLiveService {
           this._audioBuffer.push(p.inlineData.data);
         }
       }
-      if (p.text) {
-        turnText += p.text;
-      }
-    }
-
-    if (turnText && this.onTranscript) {
-      this.onTranscript({ role: 'ai', text: turnText });
     }
 
     // Flush audio as ONE clean WAV on generationComplete
