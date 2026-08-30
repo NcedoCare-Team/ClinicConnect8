@@ -1,32 +1,19 @@
 // src/services/GeminiLiveService.js
-// ─────────────────────────────────────────────────────────────────────────────
-// NcedoCare — Gemini Live Real-Time Voice Consultation Client Service
-//
-// Features:
-//   - Bidirectional WebSocket connection to the standalone Python live relay
-//     (models/server/live_server.py, port 8765).
-//   - Utterance-based audio input: the full recorded file (WAV on iOS, M4A on
-//     Android) is sent with explicit activityStart/activityEnd markers; the
-//     relay transcodes it to the raw 16 kHz PCM Gemini Live requires.
-//   - 24 kHz PCM audio output buffered per turn -> playable WAV file.
-//   - Triage submission event listener (onTriageSubmitted) for seamless auto-close.
-// ─────────────────────────────────────────────────────────────────────────────
+// Same live WebSocket client as VisionAlly (audio only) — NcedoCare triage extras kept.
 
 import * as FileSystem from 'expo-file-system/legacy';
-import { API_CONFIG } from './ApiService';
+
+const LIVE_CONFIG = {
+  // RELAY_URL: 'ws://YOUR_LOCAL_IP:8765',
+
+  RELAY_URL: 'ws://192.168.68.108:8765',    // <-- Replace with your IP like shown above
+};
 
 export function getLiveRelayUrl() {
-  // Same host AND port as the working text chatbot.
-  // VisionAlly used ws://<lan-ip>:8765, but Windows Firewall often drops that
-  // extra port from the phone while HTTP :5000 already works. Flask now
-  // accepts the React Native socket at /live and proxies it to live_server.py
-  // on localhost:8765 (same two-process setup, reachable path).
-  const httpBase = (API_CONFIG.BASE_URL || '').replace(/\/+$/, '');
-  const host = httpBase.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-  return `ws://${host}:5000/live`;
+  return LIVE_CONFIG.RELAY_URL;
 }
 
-const OUTPUT_SAMPLE_RATE = 24000; // Gemini Live outputs 24 kHz PCM
+const OUTPUT_SAMPLE_RATE = 24000;
 
 function buildWavHeader(pcmLen, sr = OUTPUT_SAMPLE_RATE, ch = 1, bits = 16) {
   const byteRate = sr * ch * (bits / 8);
@@ -68,20 +55,15 @@ export class GeminiLiveService {
     this._msgQueue        = [];
     this._processingQueue = false;
 
-    // Callbacks to configure before or right after instantiating
-    this.onSetupComplete   = null; // () => void
-    this.onAudioReady      = null; // (wavUri: string) => void
-    this.onTurnComplete    = null; // () => void
-    this.onInterrupted     = null; // () => void
-    this.onTriageSubmitted = null; // (data: { caseId, fallbackFields, conversationId, priority }) => void
-    this.onSessionEnded    = null; // (code: number, reason: string) => void
-    this.onError           = null; // (error: Error) => void
+    this.onSetupComplete   = null;
+    this.onAudioReady      = null;
+    this.onTurnComplete    = null;
+    this.onInterrupted     = null;
+    this.onTriageSubmitted = null;
+    this.onSessionEnded    = null;
+    this.onError           = null;
   }
 
-  /**
-   * Connect to the Gemini Live relay server.
-   * @param {Object|string} config - Options or custom systemInstruction string
-   */
   async connect(config = {}) {
     return new Promise((resolve, reject) => {
       if (this._ws) {
@@ -90,7 +72,6 @@ export class GeminiLiveService {
       }
 
       const relayUrl = getLiveRelayUrl();
-      this._relayUrl = relayUrl;
       console.log('[GeminiLive] Connecting to relay:', relayUrl);
 
       try {
@@ -101,19 +82,6 @@ export class GeminiLiveService {
       }
 
       let settled = false;
-
-      const fail = (err) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (this.onError) this.onError(err);
-        reject(err);
-      };
-
-      const timer = setTimeout(() => {
-        fail(new Error(`Timed out connecting to ${relayUrl}. Start both servers: py app.py  and  py live_server.py`));
-        try { this._ws?.close(); } catch { /* ignore */ }
-      }, 15000);
 
       const setupPayload = typeof config === 'string'
         ? { systemInstruction: config, voiceName: 'Aoede' }
@@ -133,30 +101,30 @@ export class GeminiLiveService {
         }));
       };
 
+      this._msgCount = 0;
+
       this._ws.onmessage = (evt) => {
-        this._msgQueue.push({
-          raw: evt.data,
-          resolveSetup: () => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve();
-          },
-        });
+        this._msgCount++;
+        this._msgQueue.push({ raw: evt.data, resolveSetup: resolve });
         if (!this._processingQueue) this._drainQueue();
       };
 
       this._ws.onerror = (err) => {
-        console.log('[GeminiLive] WS error:', err, 'url=', relayUrl);
-        fail(new Error(`Cannot reach ${relayUrl}. Start both servers: py app.py  and  py live_server.py`));
+        if (settled) return;
+        settled = true;
+        console.log('[GeminiLive] WS error:', err);
+        const e = new Error(`WebSocket error — cannot reach ${relayUrl}. Start: py live_server.py`);
+        if (this.onError) this.onError(e);
+        reject(e);
       };
 
       this._ws.onclose = (evt) => {
         console.log('[GeminiLive] WS closed:', evt.code, evt.reason);
         this._isConnected     = false;
         this._isSetupComplete = false;
-        if (!settled) {
-          fail(new Error(`Live connection closed (${evt.code || 'no code'}). Is app.py running, and live_server.py on port 8765?`));
+        if (!settled && evt.code !== 1000 && evt.code !== 1001) {
+          settled = true;
+          if (this.onSessionEnded) this.onSessionEnded(evt.code, evt.reason);
         } else if (evt.code !== 1000 && evt.code !== 1001) {
           if (this.onSessionEnded) this.onSessionEnded(evt.code, evt.reason);
         }
@@ -164,28 +132,35 @@ export class GeminiLiveService {
     });
   }
 
-  /**
-   * Send one complete spoken utterance to the relay.
-   *
-   * The relay converts WAV/M4A to the raw 16 kHz PCM Gemini requires.
-   * Automatic voice detection is disabled server-side, so every utterance
-   * must be framed with explicit activityStart / activityEnd markers.
-   *
-   * @param {string} b64Audio - base64 of the full recorded file (with container)
-   * @param {string} mimeType - 'audio/wav' (iOS) or 'audio/mp4' (Android)
-   */
-  sendAudioUtterance(b64Audio, mimeType) {
+  sendAudioChunk(b64Pcm) {
     if (!this.isReady) return;
-    this._send({ realtimeInput: { activityStart: {} } });
     this._send({
       realtimeInput: {
         audio: {
-          mimeType,
-          data: b64Audio,
+          mimeType: 'audio/pcm;rate=16000',
+          data: b64Pcm,
         },
       },
     });
+  }
+
+  sendActivityStart() {
+    if (!this.isReady) return;
+    this._send({ realtimeInput: { activityStart: {} } });
+  }
+
+  sendActivityEnd() {
+    if (!this.isReady) return;
     this._send({ realtimeInput: { activityEnd: {} } });
+  }
+
+  sendTextPrompt(text) {
+    if (!this.isReady) return;
+    this._send({
+      realtimeInput: {
+        text: text,
+      },
+    });
   }
 
   sendClientTurn(text) {
@@ -231,21 +206,17 @@ export class GeminiLiveService {
       return;
     }
 
-    // 1. Setup acknowledgment
     if (msg.setupComplete !== undefined) {
-      console.log('[GeminiLive] ✅ setupComplete verified');
+      console.log('[GeminiLive] ✅ setupComplete');
       this._isSetupComplete = true;
       if (this.onSetupComplete) this.onSetupComplete();
       if (resolveSetup) resolveSetup();
       return;
     }
 
-    // 2. Triage submitted notification from relay server
     if (msg.triageSubmitted) {
-      console.log('[GeminiLive] 🎯 Triage submitted event received:', msg.caseId, msg.priority);
-      if (this.onTriageSubmitted) {
-        this.onTriageSubmitted(msg);
-      }
+      console.log('[GeminiLive] 🎯 Triage submitted:', msg.caseId, msg.priority);
+      if (this.onTriageSubmitted) this.onTriageSubmitted(msg);
     }
 
     if (msg.sessionResumptionUpdate?.newHandle) {
@@ -253,7 +224,7 @@ export class GeminiLiveService {
     }
 
     if (msg.goAway) {
-      console.warn('[GeminiLive] GoAway received from Gemini');
+      console.warn('[GeminiLive] GoAway received');
       if (this.onSessionEnded) this.onSessionEnded(0, 'GoAway');
       return;
     }
@@ -262,7 +233,7 @@ export class GeminiLiveService {
     if (!c) return;
 
     if (c.interrupted) {
-      console.log('[GeminiLive] Interrupted by user');
+      console.log('[GeminiLive] interrupted');
       this._audioBuffer = [];
       if (this.onInterrupted) this.onInterrupted();
       return;
@@ -278,7 +249,6 @@ export class GeminiLiveService {
       }
     }
 
-    // Flush audio as ONE clean WAV on generationComplete
     if (c.generationComplete) {
       if (this._audioBuffer.length > 0) {
         const wavUri = await this._flushToWav();
@@ -316,7 +286,7 @@ export class GeminiLiveService {
       });
       return uri;
     } catch (e) {
-      console.log('[GeminiLive] _flushToWav error:', e);
+      console.log('[GeminiLive] _flushToWav:', e);
       return null;
     }
   }

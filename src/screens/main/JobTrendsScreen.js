@@ -297,13 +297,36 @@ export default function JobTrendsScreen({ navigation }) {
         subtitle={journeyTab === 'live'
           ? 'Follow your current visit step by step'
           : 'Signed-out visits and care to follow'}
-        tabs={[
-          { id: 'live', label: 'Live journey', dot: liveVisit },
-          { id: 'history', label: 'History', badge: sealedCount || undefined },
-        ]}
-        activeTab={journeyTab}
-        onTabChange={setJourneyTab}
       />
+
+      <View style={styles.tabShell}>
+        <View style={styles.tabRow}>
+          {[
+            { id: 'live', label: 'Live journey', dot: liveVisit },
+            { id: 'history', label: 'History', badge: sealedCount || undefined },
+          ].map((tab) => {
+            const selected = tab.id === journeyTab;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                style={[styles.tabButton, selected && styles.tabButtonActive]}
+                onPress={() => setJourneyTab(tab.id)}
+                activeOpacity={0.9}
+              >
+                <View style={styles.tabButtonInner}>
+                  {tab.dot ? <View style={[styles.tabDot, selected && styles.tabDotActive]} /> : null}
+                  <Text style={[styles.tabText, selected && styles.tabTextActive]}>{tab.label}</Text>
+                  {tab.badge != null && tab.badge !== '' ? (
+                    <View style={[styles.tabBadge, selected && styles.tabBadgeActive]}>
+                      <Text style={[styles.tabBadgeText, selected && styles.tabBadgeTextActive]}>{tab.badge}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
 
       <ScrollView
         key={journeyTab}
@@ -581,8 +604,83 @@ export default function JobTrendsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.backgroundSecondary },
 
-  scroll: { paddingTop: 16, paddingHorizontal: LAYOUT.screenPadding },
+  scroll: { paddingTop: 12, paddingHorizontal: LAYOUT.screenPadding },
   loadingWrap: { paddingTop: 40, alignItems: 'center' },
+
+  tabShell: {
+    paddingHorizontal: LAYOUT.screenPadding,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: COLORS.backgroundSecondary,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  tabButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabButtonActive: {
+    backgroundColor: COLORS.primaryVeryLight,
+  },
+  tabButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  tabDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.textTertiary,
+    opacity: 0.7,
+  },
+  tabDotActive: {
+    backgroundColor: COLORS.primary,
+    opacity: 1,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  tabTextActive: {
+    color: COLORS.primary,
+  },
+  tabBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.mediumLight,
+  },
+  tabBadgeActive: {
+    backgroundColor: COLORS.primary,
+  },
+  tabBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.textSecondary,
+  },
+  tabBadgeTextActive: {
+    color: '#FFFFFF',
+  },
 
   errorCard: {
     flexDirection: 'row',

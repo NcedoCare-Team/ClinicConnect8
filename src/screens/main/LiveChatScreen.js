@@ -40,20 +40,6 @@ const STATE = {
   ENDED: 'ended',
 };
 
-// ── Utterance capture tuning ──────────────────────────────────────────────────
-// One continuous recording per patient turn. Metering (dBFS) detects when the
-// patient stops talking; the whole utterance is then sent to the relay, which
-// transcodes it (WAV/M4A → 16 kHz PCM) for Gemini Live.
-const METER_INTERVAL_MS = 200;   // metering poll rate
-const SPEECH_DB         = -35;   // above this dBFS counts as speech
-const SILENCE_MS        = 1500;  // this much quiet after speech ⇒ turn finished
-const MAX_UTTERANCE_MS  = 60000; // hard cap per spoken turn
-const IDLE_RESTART_MS   = 45000; // restart file if nothing was said at all
-
-// iOS records real PCM WAV; Android's MediaRecorder can only produce AAC in an
-// MP4 container — the relay server converts both to raw PCM for Gemini.
-const UTTERANCE_MIME = Platform.OS === 'ios' ? 'audio/wav' : 'audio/mp4';
-
 function VisualizerBars({ active, color = COLORS.primary }) {
   const bars = useRef([...Array(12)].map(() => new Animated.Value(0.22))).current;
 
@@ -113,11 +99,7 @@ export default function LiveChatScreen() {
   const sessionStateRef = useRef(STATE.CONNECTING);
   const geminiRef = useRef(null);
   const recordingRef = useRef(null);
-  const meterIntervalRef = useRef(null);
-  const speechDetectedRef = useRef(false);
-  const silenceMsRef = useRef(0);
-  const utteranceMsRef = useRef(0);
-  const startMicCaptureRef = useRef(null);
+  const chunkIntervalRef = useRef(null);
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
   const playNextRef = useRef(null);
@@ -165,16 +147,13 @@ export default function LiveChatScreen() {
   };
 
   const makeRecordingOptions = () => ({
-    isMeteringEnabled: true,
     android: {
-      // MediaRecorder cannot record WAV/PCM — AAC in an MP4 container is the
-      // best it can do. The relay server transcodes it to PCM for Gemini.
-      extension: '.m4a',
-      outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-      audioEncoder: Audio.AndroidAudioEncoder.AAC,
+      extension: '.wav',
+      outputFormat: Audio.AndroidOutputFormat.DEFAULT,
+      audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
       sampleRate: 16000,
       numberOfChannels: 1,
-      bitRate: 64000,
+      bitRate: 128000,
     },
     ios: {
       extension: '.wav',
@@ -190,51 +169,17 @@ export default function LiveChatScreen() {
     web: {},
   });
 
-  /** Stop and DISCARD any in-progress recording (mute, AI speaking, unmount). */
   const stopMicCapture = useCallback(async () => {
-    if (meterIntervalRef.current) {
-      clearInterval(meterIntervalRef.current);
-      meterIntervalRef.current = null;
-    }
-    const rec = recordingRef.current;
-    recordingRef.current = null;
-    if (rec) {
-      try {
-        await rec.stopAndUnloadAsync();
-        const uri = rec.getURI();
-        if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
-      } catch { /* ignore */ }
+    clearInterval(chunkIntervalRef.current);
+    chunkIntervalRef.current = null;
+    if (recordingRef.current) {
+      try { await recordingRef.current.stopAndUnloadAsync(); } catch { /* ignore */ }
+      recordingRef.current = null;
     }
   }, []);
 
-  /** Stop the recording and SEND the whole utterance to Dr. Ncedo. */
-  const finishUtterance = useCallback(async () => {
-    const rec = recordingRef.current;
-    if (!rec) return;
-    recordingRef.current = null;
-    if (meterIntervalRef.current) {
-      clearInterval(meterIntervalRef.current);
-      meterIntervalRef.current = null;
-    }
-    try {
-      await rec.stopAndUnloadAsync();
-      const uri = rec.getURI();
-      if (!uri) return;
-      const b64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
-
-      geminiRef.current?.sendAudioUtterance(b64, UTTERANCE_MIME);
-      setSessionStateSynced(STATE.READY);
-      setStatusText('Dr. Ncedo is thinking…');
-    } catch (err) {
-      console.log('[LiveChat] finishUtterance error:', err);
-    }
-  }, [setSessionStateSynced]);
-
   const startMicCapture = useCallback(async () => {
-    if (recordingRef.current || isMutedRef.current || isPlayingRef.current) return;
+    if (recordingRef.current) return;
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -243,64 +188,49 @@ export default function LiveChatScreen() {
         shouldDuckAndroid: false,
         playThroughEarpieceAndroid: false,
       });
-
+    } catch { /* ignore */ }
+    try {
       const rec = new Audio.Recording();
       await rec.prepareToRecordAsync(makeRecordingOptions());
       await rec.startAsync();
       recordingRef.current = rec;
-      speechDetectedRef.current = false;
-      silenceMsRef.current = 0;
-      utteranceMsRef.current = 0;
 
       setSessionStateSynced(STATE.USER_SPEAKING);
-      setStatusText('Listening… speak naturally, then pause');
+      setStatusText('Listening… speak naturally');
 
-      meterIntervalRef.current = setInterval(async () => {
-        const current = recordingRef.current;
-        if (!current || isMutedRef.current || isPlayingRef.current) return;
-
-        let status;
+      chunkIntervalRef.current = setInterval(async () => {
+        if (!recordingRef.current || isMutedRef.current) return;
+        if (!chunkIntervalRef.current) return;
         try {
-          status = await current.getStatusAsync();
-        } catch {
-          return;
-        }
-        if (!status.isRecording) return;
+          await recordingRef.current.stopAndUnloadAsync();
+          if (!chunkIntervalRef.current) return;
+          const uri = recordingRef.current.getURI();
 
-        utteranceMsRef.current += METER_INTERVAL_MS;
-        const level = typeof status.metering === 'number' ? status.metering : null;
+          if (uri) {
+            const b64Full = await FileSystem.readAsStringAsync(uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            const raw = atob(b64Full);
+            const pcmB64 = btoa(raw.slice(44));
+            geminiRef.current?.sendAudioChunk(pcmB64);
+            FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+          }
 
-        if (level === null) {
-          // Metering unsupported on this device — send fixed 6 s windows.
-          if (utteranceMsRef.current >= 6000) finishUtterance();
-          return;
-        }
-
-        if (level > SPEECH_DB) {
-          speechDetectedRef.current = true;
-          silenceMsRef.current = 0;
-        } else if (speechDetectedRef.current) {
-          silenceMsRef.current += METER_INTERVAL_MS;
-          if (silenceMsRef.current >= SILENCE_MS) {
-            finishUtterance();
-            return;
+          if (!chunkIntervalRef.current) return;
+          const newRec = new Audio.Recording();
+          await newRec.prepareToRecordAsync(makeRecordingOptions());
+          await newRec.startAsync();
+          recordingRef.current = newRec;
+        } catch (e) {
+          if (chunkIntervalRef.current) {
+            console.warn('[LiveChat] chunk error:', e.message);
           }
         }
-
-        if (speechDetectedRef.current && utteranceMsRef.current >= MAX_UTTERANCE_MS) {
-          finishUtterance();
-        } else if (!speechDetectedRef.current && utteranceMsRef.current >= IDLE_RESTART_MS) {
-          // Nothing said — restart so the silent file doesn't grow unbounded.
-          await stopMicCapture();
-          startMicCaptureRef.current?.();
-        }
-      }, METER_INTERVAL_MS);
+      }, 200);
     } catch (err) {
-      console.log('[LiveChat] startMicCapture error:', err);
+      console.log('[LiveChat] startMicCapture:', err);
     }
-  }, [setSessionStateSynced, finishUtterance, stopMicCapture]);
-
-  startMicCaptureRef.current = startMicCapture;
+  }, [setSessionStateSynced]);
 
   const playNext = useCallback(async () => {
     if (audioQueueRef.current.length === 0) {
@@ -456,6 +386,7 @@ export default function LiveChatScreen() {
           isPlayingRef.current = false;
           setSessionStateSynced(STATE.USER_SPEAKING);
           setStatusText('Listening…');
+          if (!isMutedRef.current) startMicCapture();
         };
 
         liveService.onTriageSubmitted = (data) => {
@@ -477,7 +408,7 @@ export default function LiveChatScreen() {
           if (!isMounted) return;
           Alert.alert(
             'Could not start live assessment',
-            err?.message || `Unable to reach ${getLiveRelayUrl()}. Start app.py and live_server.py.`,
+            err?.message || `Unable to reach ${getLiveRelayUrl()}. Start: py live_server.py`,
             [{ text: 'OK', onPress: () => goBackOrHome() }]
           );
         };
@@ -492,7 +423,7 @@ export default function LiveChatScreen() {
         console.log('[LiveChat] Connection setup failed:', err);
         Alert.alert(
           'Connection error',
-          err?.message || `Could not reach ${getLiveRelayUrl()}. Start app.py and live_server.py.`,
+          err?.message || `Could not reach ${getLiveRelayUrl()}. Start: py live_server.py`,
           [{ text: 'OK', onPress: () => goBackOrHome() }]
         );
       }
@@ -527,10 +458,7 @@ export default function LiveChatScreen() {
   const handleSendTyped = () => {
     const txt = typedMessage.trim();
     if (!txt || !geminiRef.current) return;
-    // Discard any half-recorded audio so it doesn't mix with the typed turn.
-    stopMicCapture();
-    geminiRef.current.sendClientTurn(txt);
-    setStatusText('Dr. Ncedo is thinking…');
+    geminiRef.current.sendTextPrompt(txt);
     setTypedMessage('');
     setShowTextInput(false);
   };
@@ -676,7 +604,7 @@ export default function LiveChatScreen() {
           ) : null}
 
           <Text style={styles.hint}>
-            Speak naturally, then pause — Dr. Ncedo answers after a short moment of silence. When enough is gathered, your case is sent to the care team.
+            Speak with Dr. Ncedo the same way you would in a text assessment. When enough is gathered, your case is sent to the care team.
           </Text>
         </View>
       </View>

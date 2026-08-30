@@ -9,17 +9,20 @@ import {
   Text,
   Image,
   ScrollView,
-  Platform,
   Alert,
   Keyboard
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AudioRecorder from './AudioRecorder';
 import { COLORS } from '../../../constants/colors';
+import { useInputBarBottomInset } from '../../../constants/layout';
 
 const ChatInput = ({ onSendMessage, disabled }) => {
+  const insets = useSafeAreaInsets();
+  const inputBottomInset = useInputBarBottomInset(12);
   const [inputText, setInputText] = useState('');
   const [inputHeight, setInputHeight] = useState(40);
   const [selectedImages, setSelectedImages] = useState([]);
@@ -340,7 +343,7 @@ const ChatInput = ({ onSendMessage, disabled }) => {
       )}
 
       {/* Main Input Container */}
-      <View style={[styles.container, { paddingBottom: keyboardVisible ? 16 : 40 }]}>
+      <View style={[styles.container, { paddingBottom: keyboardVisible ? insets.bottom + 12 : inputBottomInset }]}>
         <View style={styles.inputWrapper}>
           {/* Media Button */}
           {!isRecording && (
@@ -458,7 +461,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#E8E8E8',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    paddingBottom: Platform.OS === 'ios' ? 105 : 105,
+    marginBottom: -40,
   },
   inputWrapper: {
     flexDirection: 'row',

@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
 import { COLORS } from '../../constants/colors';
+import { useInputBarBottomInset } from '../../constants/layout';
 import { COLLECTIONS } from '../../services/firestorePaths';
 import ApiService from '../../services/ApiService';
 import { ChatStorageService } from '../../services/ChatStorageService';
@@ -37,6 +38,7 @@ import {
 export default function ChatConversationScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const inputBottomInset = useInputBarBottomInset(12);
   const { conversationId: initialConversationId, conversationTitle: initialTitle } = route.params || {};
   
   const [messages, setMessages] = useState([]);
@@ -706,7 +708,7 @@ export default function ChatConversationScreen() {
         />
 
         {caseLocked ? (
-          <View style={styles.lockedBar}>
+          <View style={[styles.lockedBar, { paddingBottom: inputBottomInset }]}>
             <Text style={styles.lockedTitle}>Facility queue · live</Text>
             <Text style={styles.lockedSub}>
               Updates as the care team works on your visit. Chat stays paused until the doctor signs you out.
@@ -877,7 +879,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#E8E8E8',
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 100 : 100,
+    marginBottom: -40,
   },
   lockedIconWrap: {
     width: 40,

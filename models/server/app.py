@@ -1232,3 +1232,10 @@ if __name__ == '__main__':
     except ImportError:
         print("gevent-websocket not installed — Flask dev server (live /live may fail on phone)")
         app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=False)
+    except OSError as e:
+        if getattr(e, "winerror", None) == 10048 or getattr(e, "errno", None) == 10048:
+            print("ERROR: port 5000 is already in use.")
+            print("Another app.py (or the old Flask debugger) is still running.")
+            print("In that other terminal press Ctrl+C, then start only ONE:  py app.py")
+            sys.exit(1)
+        raise

@@ -44,7 +44,6 @@ import tempfile
 import time
 import wave
 from datetime import datetime
-from http import HTTPStatus
 import urllib.request
 import urllib.error
 
@@ -72,11 +71,8 @@ _TEXT_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_API_KEY = _LIVE_KEY or _TEXT_KEY
 GEMINI_KEY_SOURCE = "GEMINI_LIVE_API_KEY" if _LIVE_KEY else "GEMINI_API_KEY"
 
-# Official Live API model from https://ai.google.dev/gemini-api/docs/models
-# and https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket
-# Do NOT use gemini-3.6-flash here — it is text-only and rejects bidi/live.
-# Do NOT use gemini-2.5-flash-native-audio-latest — not the current documented ID.
-GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+# Same Live model VisionAlly uses successfully on this network.
+GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-latest")
 
 GEMINI_WS_URL = (
     "wss://generativelanguage.googleapis.com/ws/"
@@ -457,16 +453,17 @@ async def handle_client(client_ws):
                             }
                         }
                     },
+                    "thinkingConfig": {
+                        "thinkingBudget": 0,
+                    },
                 },
                 "systemInstruction": {
                     "parts": [{"text": system_instruction}],
                 },
-                # The client records complete utterances and marks them with
-                # explicit activityStart/activityEnd, so server-side automatic
-                # voice activity detection MUST be disabled (Live API rule:
-                # activity signals are only legal when automatic detection is off).
                 "realtimeInputConfig": {
-                    "automaticActivityDetection": {"disabled": True},
+                    "automaticActivityDetection": {
+                        "disabled": True,
+                    },
                 },
                 "tools": [
                     {
@@ -480,17 +477,17 @@ async def handle_client(client_ws):
         }
 
         # 2. Connect to Gemini Live API
-        print(f"[{_ts()}] Connecting to Gemini Live API ({GEMINI_MODEL})…")
+        print(f"[{_ts()}] Connecting to Gemini ({GEMINI_MODEL})…")
         gemini_ws = await websockets.connect(
             GEMINI_WS_URL,
             max_size=16 * 1024 * 1024,
             close_timeout=5,
         )
-        print(f"[{_ts()}] Connected to Gemini Live API")
+        print(f"[{_ts()}] Connected to Gemini")
 
         # 3. Send setup config
         await gemini_ws.send(json.dumps(gemini_config))
-        print(f"[{_ts()}] Config sent to Gemini, awaiting setupComplete…")
+        print(f"[{_ts()}] Config sent to Gemini, waiting for setupComplete…")
 
         # 4. Wait for setupComplete from Gemini
         setup_response = await asyncio.wait_for(gemini_ws.recv(), timeout=20)
@@ -504,7 +501,7 @@ async def handle_client(client_ws):
             }))
             return
 
-        print(f"[{_ts()}] Gemini setupComplete verified")
+        print(f"[{_ts()}] Gemini setupComplete")
 
         # 5. Notify the client that setup is complete
         await client_ws.send(json.dumps({
@@ -542,53 +539,25 @@ async def handle_client(client_ws):
 
 
 async def _relay_client_to_gemini(client_ws, gemini_ws):
-    """Forward messages from the React Native client to Gemini.
-
-    Audio frames are intercepted: the client sends whole utterances as WAV
-    (iOS) or M4A (Android), which are converted here to the raw 16 kHz mono
-    PCM format Gemini Live requires before being forwarded.
-    """
+    """Forward messages from the React Native client to Gemini (VisionAlly path)."""
     try:
         async for message in client_ws:
-            parsed = None
             try:
                 parsed = json.loads(message)
+                if 'realtimeInput' in parsed:
+                    ri = parsed['realtimeInput']
+                    if 'audio' in ri:
+                        print(f"[{_ts()}] → Gemini: audio chunk")
+                    elif 'text' in ri:
+                        print(f"[{_ts()}] → Gemini: text: {ri['text'][:80]}")
+                    elif 'activityStart' in ri:
+                        print(f"[{_ts()}] → Gemini: activityStart")
+                    elif 'activityEnd' in ri:
+                        print(f"[{_ts()}] → Gemini: activityEnd")
+                    else:
+                        print(f"[{_ts()}] → Gemini: realtimeInput {list(ri.keys())}")
             except Exception:
-                pass
-
-            if parsed and 'realtimeInput' in parsed:
-                ri = parsed['realtimeInput']
-                audio = ri.get('audio')
-                mime = (audio or {}).get('mimeType', '')
-
-                if audio and not mime.startswith('audio/pcm'):
-                    # Convert WAV/M4A utterance to raw PCM off the event loop
-                    try:
-                        pcm_b64, pcm_len = await asyncio.to_thread(
-                            convert_to_pcm16k_b64, audio.get('data', ''), mime
-                        )
-                    except Exception as e:
-                        print(f"[{_ts()}] ⚠ Audio conversion failed ({mime}): {e}")
-                        continue  # drop the frame rather than feed Gemini garbage
-                    secs = pcm_len / 32000.0  # 16000 Hz * 2 bytes
-                    print(f"[{_ts()}] → Patient utterance: {mime} → PCM {secs:.1f}s")
-                    message = json.dumps({
-                        "realtimeInput": {
-                            "audio": {
-                                "mimeType": "audio/pcm;rate=16000",
-                                "data": pcm_b64,
-                            }
-                        }
-                    })
-                elif 'text' in ri:
-                    print(f"[{_ts()}] → Patient text input: {ri['text'][:80]}")
-                elif 'activityStart' in ri:
-                    print(f"[{_ts()}] → User speaking (activityStart)")
-                elif 'activityEnd' in ri:
-                    print(f"[{_ts()}] → User finished speaking (activityEnd)")
-            elif parsed and 'clientContent' in parsed:
-                print(f"[{_ts()}] → Client turn sent")
-
+                print(f"[{_ts()}] → Gemini: (binary {len(message)} bytes)")
             await gemini_ws.send(message)
     except websockets.exceptions.ConnectionClosed:
         pass
@@ -719,9 +688,8 @@ async def main():
     print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Model:   {GEMINI_MODEL}")
     print(f"  API key: {GEMINI_KEY_SOURCE} ({GEMINI_API_KEY[:6]}…{GEMINI_API_KEY[-4:]})")
-    print(f"  Listen:  ws://{RELAY_HOST}:{RELAY_PORT}  (localhost only from app.py)")
-    print(f"  Phone:   ws://<lan-ip>:5000/live  via app.py proxy — do not expose 8765")
-    print(f"  ffmpeg:  {_find_ffmpeg() or 'NOT FOUND — Android audio will fail'}")
+    print(f"  Listen:  ws://{RELAY_HOST}:{RELAY_PORT}")
+    print(f"  Clients connect here and get relayed to Gemini Live API")
     print(f"  Persona: Dr. Ncedo (POPIA-compliant Clinical Triage Agent)")
     print(f"  Tools:   get_clinical_attribute, submit_triage_case")
     print(f"  NOTE:    Standalone server. Run app.py separately for text chat.")
@@ -739,21 +707,6 @@ async def main():
         except NotImplementedError:
             pass
 
-    async def _http_health(connection, request):
-        # Allow a phone browser to hit http://<lan-ip>:8765/health to see if
-        # this extra port is firewalled (chat on :5000 working does not prove :8765).
-        path = getattr(request, "path", "")
-        upgrade = ""
-        headers = getattr(request, "headers", None)
-        if headers is not None:
-            try:
-                upgrade = headers.get("Upgrade", "") or headers.get("upgrade", "")
-            except Exception:
-                upgrade = ""
-        if path in ("/", "/health") and str(upgrade).lower() != "websocket":
-            return connection.respond(HTTPStatus.OK, '{"status":"ok","service":"ncedocare-live"}\n')
-        return None
-
     async with websockets.serve(
         handle_client,
         RELAY_HOST,
@@ -761,9 +714,8 @@ async def main():
         max_size=16 * 1024 * 1024,
         ping_interval=20,
         ping_timeout=20,
-        process_request=_http_health,
     ):
-        print(f"[{_ts()}] Server ready — waiting for client connections…\n")
+        print(f"[{_ts()}] Server ready — waiting for connections…\n")
         try:
             await stop
         except asyncio.CancelledError:
