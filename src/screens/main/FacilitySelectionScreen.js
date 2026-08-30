@@ -16,6 +16,7 @@ import {
   goBackOrHome,
 } from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
+import { FacilityRegistryService } from '../../services/FacilityRegistryService';
 
 // ── Nominatim API ─────────────────────────────────────────────────────────────
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
@@ -246,7 +247,8 @@ export default function FacilitySelectionScreen() {
         .forEach(r => console.warn('[Nominatim]', r.reason?.message));
 
       const parsed = parseNominatimResults(allPlaces, coords.lat, coords.lng);
-      setFacilities(parsed);
+      const annotated = await FacilityRegistryService.annotatePlacesAsync(parsed);
+      setFacilities(annotated);
 
       if (!isRefresh && parsed.length === 0 && allPlaces.length === 0) {
         setApiError('No healthcare facilities found nearby.\n\nCheck your internet connection and try again.');
@@ -287,7 +289,8 @@ export default function FacilitySelectionScreen() {
 
         const origin = userLocation || { lat: -26.2041, lng: 28.0473 };
         const parsed = parseNominatimResults(places, origin.lat, origin.lng);
-        setRemoteResults(parsed);
+        const annotated = await FacilityRegistryService.annotatePlacesAsync(parsed);
+        setRemoteResults(annotated);
       } catch (err) {
         if (reqId !== searchReqRef.current) return;
         console.warn('[Nominatim] text search:', err.message);
@@ -328,20 +331,25 @@ export default function FacilitySelectionScreen() {
     const dist    = item.distance < 999 ? distanceLabel(item.distance) : null;
     const distCol = item.distance < 999 ? distanceColor(item.distance) : COLORS.textTertiary;
     const isNearest = index === 0 && !search.trim() && typeFilter === 'all' && ownerFilter === 'all';
+    const unregistered = item.isRegistered !== true;
 
     return (
       <TouchableOpacity
-        style={[styles.facilityCard, isNearest && styles.facilityCardFeatured]}
+        style={[
+          styles.facilityCard,
+          isNearest && !unregistered && styles.facilityCardFeatured,
+          unregistered && styles.facilityCardUnregistered,
+        ]}
         onPress={() => handleSelect(item)}
         activeOpacity={0.88}>
-        {isNearest && (
+        {isNearest && !unregistered && (
           <View style={styles.nearestRibbon}>
             <Ionicons name="star" size={10} color="#FFFFFF" />
             <Text style={styles.nearestRibbonText}>Nearest to you</Text>
           </View>
         )}
 
-        <View style={[styles.cardAccent, { backgroundColor: cfg.color }]} />
+        <View style={[styles.cardAccent, { backgroundColor: unregistered ? COLORS.error : cfg.color }]} />
 
         <LinearGradient
           colors={[cfg.bg, '#FFFFFF']}
@@ -365,6 +373,17 @@ export default function FacilitySelectionScreen() {
                 {item.ownership === 'private' ? 'Private' : 'Public'}
               </Text>
             </View>
+            {unregistered ? (
+              <View style={styles.unregisteredBadge}>
+                <Ionicons name="flag" size={10} color={COLORS.error} />
+                <Text style={styles.unregisteredBadgeText}>Not registered yet</Text>
+              </View>
+            ) : (
+              <View style={styles.registeredBadge}>
+                <Ionicons name="checkmark-circle" size={10} color={COLORS.success} />
+                <Text style={styles.registeredBadgeText}>On NcedoCare</Text>
+              </View>
+            )}
           </View>
           {item.address ? (
             <View style={styles.addressRow}>
@@ -393,7 +412,7 @@ export default function FacilitySelectionScreen() {
       <View style={styles.heroHint}>
         <Ionicons name="navigate-circle" size={18} color={COLORS.primary} />
         <Text style={styles.heroHintText}>
-          Choose a facility near you to connect your care journey
+          All nearby hospitals are listed. Only facilities registered on NcedoCare can receive your assessment.
         </Text>
       </View>
 
@@ -691,6 +710,30 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primaryGlow,
     borderWidth: 1.5,
   },
+  facilityCardUnregistered: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FFFCFC',
+  },
+  unregisteredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    backgroundColor: COLORS.errorLight,
+  },
+  unregisteredBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.error },
+  registeredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    backgroundColor: COLORS.successLight,
+  },
+  registeredBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.success },
   nearestRibbon: {
     position: 'absolute', top: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', gap: 4,

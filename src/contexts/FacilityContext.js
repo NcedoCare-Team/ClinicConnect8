@@ -8,6 +8,7 @@ import React, {
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { SessionService } from '../services/SessionService';
+import { FacilityRegistryService } from '../services/FacilityRegistryService';
 
 const FacilityContext = createContext(null);
 
@@ -29,7 +30,21 @@ export const FacilityProvider = ({ children }) => {
     }
     setReady(false);
     const loaded = await SessionService.loadForUser(uid);
-    setSessionState(loaded);
+    if (loaded?.facilityId || loaded?.facilityName) {
+      const ok = await FacilityRegistryService.isPlaceRegistered({
+        id: loaded.facilityId,
+        name: loaded.facilityName,
+        lat: loaded.facilityLat,
+        lng: loaded.facilityLng,
+        isRegistered: loaded.facilityRegistered,
+        registeredId: loaded.facilityId,
+      });
+      loaded.facilityRegistered = ok;
+      await SessionService.setSession(loaded);
+      setSessionState(loaded);
+    } else {
+      setSessionState(loaded);
+    }
     setReady(true);
   }, []);
 
@@ -54,7 +69,12 @@ export const FacilityProvider = ({ children }) => {
     session,
     ready,
     facilityName: session?.facilityName || '',
+    facilityId: session?.facilityId || '',
     hasFacility: Boolean(session?.facilityId || session?.facilityName),
+    facilityRegistered: session?.facilityRegistered === true,
+    hasRegisteredFacility: Boolean(
+      (session?.facilityId || session?.facilityName) && session?.facilityRegistered === true
+    ),
     setFacilitySession,
     clearFacility,
     refresh: () => hydrate(auth.currentUser?.uid),

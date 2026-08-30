@@ -305,6 +305,14 @@ export default function ChatConversationScreen() {
 
   const handleSend = async (messageContent) => {
     if (caseLocked) return;
+    const session = SessionService.getSession();
+    if (session?.facilityRegistered !== true) {
+      Alert.alert(
+        'Facility not registered',
+        'Assessments can only be sent to a healthcare facility registered on NcedoCare. Choose a registered facility to continue.',
+      );
+      return;
+    }
 
     let currentConversationId = conversationId;
 

@@ -340,6 +340,16 @@ export default function LiveChatScreen() {
 
     const startSession = async () => {
       try {
+        const session = SessionService.getSession();
+        if (session?.facilityRegistered !== true) {
+          Alert.alert(
+            'Facility not registered',
+            'Live assessments can only be sent to a healthcare facility registered on NcedoCare.',
+            [{ text: 'OK', onPress: () => goBackOrHome() }]
+          );
+          return;
+        }
+
         const { status: micStatus } = await Audio.requestPermissionsAsync();
         if (micStatus !== 'granted') {
           Alert.alert(

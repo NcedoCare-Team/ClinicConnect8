@@ -58,7 +58,7 @@ function AssessmentHeader() {
 export default function SmartChatScreen() {
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width - LAYOUT.screenPadding * 2, 420);
-  const { hasFacility, facilityName, ready } = useFacility();
+  const { hasFacility, hasRegisteredFacility, facilityName, ready } = useFacility();
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
 
@@ -87,10 +87,12 @@ export default function SmartChatScreen() {
   const confirmFacilityThen = (action) => {
     if (!ready) return;
 
-    if (!hasFacility) {
+    if (!hasFacility || !hasRegisteredFacility) {
       Alert.alert(
-        'Choose a healthcare facility',
-        'Connect to a healthcare facility before starting your assessment so your care team can follow your journey.',
+        hasFacility ? 'Facility not registered' : 'Choose a healthcare facility',
+        hasFacility
+          ? `${facilityName} is not registered on NcedoCare yet. Choose a registered facility to start your assessment.`
+          : 'Connect to a registered healthcare facility before starting your assessment so your care team can follow your journey.',
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -140,12 +142,23 @@ export default function SmartChatScreen() {
 
           <View style={[styles.centerBlock, { width: contentWidth, maxWidth: contentWidth }]}>
             <Text style={styles.sectionLabel}>Start your consultation</Text>
-            {hasFacility ? (
+            {hasRegisteredFacility ? (
               <View style={styles.facilityNameWrap}>
                 <Text style={styles.facilityNameOnly} numberOfLines={2}>
                   {facilityName}
                 </Text>
               </View>
+            ) : hasFacility ? (
+              <TouchableOpacity
+                style={styles.facilityUnregisteredRow}
+                onPress={() => openFacilitySelection()}
+                activeOpacity={0.85}>
+                <Ionicons name="flag" size={16} color={COLORS.error} />
+                <Text style={styles.facilityUnregisteredText}>
+                  {facilityName} is not registered yet — choose another facility
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={COLORS.error} />
+              </TouchableOpacity>
             ) : (
               <TouchableOpacity
                 style={styles.facilityMissingRow}
@@ -426,6 +439,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.warning,
+  },
+  facilityUnregisteredRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'center',
+    backgroundColor: COLORS.errorLight,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginBottom: 14,
+    maxWidth: '100%',
+  },
+  facilityUnregisteredText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.error,
   },
   intro: {
     fontSize: 14,

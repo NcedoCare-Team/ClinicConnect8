@@ -7,14 +7,13 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, firestore } from '../../../firebase';
-import { setDoc, getDoc } from 'firebase/firestore';
+import { auth } from '../../../firebase';
 import { useLocalSearchParams, router } from 'expo-router';
 import { replacePatientTab, parseNavParam } from '../../navigation/openPatientTab';
 import { COLORS } from '../../constants/colors';
 import { UserProfileService } from '../../services/UserProfileService';
 import { useFacility } from '../../contexts/FacilityContext';
-import { facilityRef } from '../../services/firestorePaths';
+import { FacilityRegistryService } from '../../services/FacilityRegistryService';
 
 const TYPE_ICON = {
   hospital: 'business',
@@ -46,6 +45,8 @@ export default function FacilityWelcomeScreen() {
 
   const [profile, setProfile] = useState(null);
   const [saving, setSaving]   = useState(false);
+  const [isRegistered, setIsRegistered] = useState(facility?.isRegistered === true);
+  const [checkingRegistry, setCheckingRegistry] = useState(facility?.isRegistered !== true);
 
   useEffect(() => {
     (async () => {
@@ -54,6 +55,24 @@ export default function FacilityWelcomeScreen() {
     })();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (facility?.isRegistered === true && facility?.registeredId) {
+        setIsRegistered(true);
+        setCheckingRegistry(false);
+        return;
+      }
+      setCheckingRegistry(true);
+      const ok = await FacilityRegistryService.isPlaceRegistered(facility);
+      if (!cancelled) {
+        setIsRegistered(ok);
+        setCheckingRegistry(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [facility?.id, facility?.name, facility?.isRegistered, facility?.registeredId]);
+
   const firstName = profile?.firstName || profile?.displayName?.split(' ')[0] || '';
   const lastName  = profile?.lastName  || profile?.displayName?.split(' ').slice(1).join(' ') || '';
   const displayName = profile?.displayName || `${firstName} ${lastName}`.trim();
@@ -61,10 +80,12 @@ export default function FacilityWelcomeScreen() {
   const idNumber = profile?.idNumber || '';
 
   const saveFacility = async (nextTab) => {
+    if (!isRegistered) return;
     setSaving(true);
     try {
+      const boundId = facility?.registeredId || facility?.id || '';
       const sessionData = {
-        facilityId:       facility?.id   || '',
+        facilityId:       boundId,
         facilityName,
         facilityType,
         facilityAddress,
@@ -76,41 +97,17 @@ export default function FacilityWelcomeScreen() {
         patientAge:       age ?? null,
         patientIdNumber:  idNumber,
         sessionStartedAt: new Date().toISOString(),
+        facilityRegistered: true,
         ...(nextTab === 'assessment' ? { pendingMainTab: 'assessment' } : {}),
       };
 
       await setFacilitySession(sessionData);
       await UserProfileService.saveProfile({
         primaryFacility: facilityName,
-        primaryFacilityId: facility?.id || '',
-        facilityId: facility?.id || '',
+        primaryFacilityId: boundId,
+        facilityId: boundId,
         location: facilityAddress,
       });
-
-      // Create facility doc only if missing (updates require admin per shared rules)
-      if (facility?.id) {
-        try {
-          const ref = facilityRef(firestore, facility.id);
-          const existing = await getDoc(ref);
-          if (!existing.exists()) {
-            await setDoc(ref, {
-              facilityId: facility.id,
-              name: facilityName,
-              address: facilityAddress,
-              lat: facility?.lat ?? null,
-              lng: facility?.lng ?? null,
-              type: facilityType,
-              ownership: facilityOwnership,
-              country: 'South Africa',
-              isActive: true,
-              hasAdmin: false,
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        } catch (err) {
-          console.log('Facility doc create error:', err);
-        }
-      }
 
       replacePatientTab(nextTab === 'assessment' ? 'assessment' : 'home');
     } catch (err) {
@@ -148,12 +145,14 @@ export default function FacilityWelcomeScreen() {
             <View style={styles.facilityIconRing}>
               <Ionicons name={headerIcon} size={36} color="#FFFFFF" />
             </View>
-            <View style={styles.checkBadge}>
-              <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+            <View style={[styles.checkBadge, !isRegistered && styles.checkBadgeWarn]}>
+              <Ionicons name={isRegistered ? 'checkmark' : 'flag'} size={14} color="#FFFFFF" />
             </View>
           </View>
 
-          <Text style={styles.welcomeText}>You're connecting to</Text>
+          <Text style={styles.welcomeText}>
+            {isRegistered ? "You're connecting to" : 'This facility is nearby'}
+          </Text>
           <Text style={styles.facilityName} numberOfLines={3}>{facilityName}</Text>
 
           <View style={styles.heroMetaRow}>
@@ -180,75 +179,108 @@ export default function FacilityWelcomeScreen() {
 
         <View style={styles.formCard}>
           <View style={styles.formHeader}>
-            <Text style={styles.formTitle}>Ready to connect</Text>
+            <Text style={styles.formTitle}>
+              {checkingRegistry ? 'Checking registration' : isRegistered ? 'Ready to connect' : 'Not registered yet'}
+            </Text>
             <Text style={styles.formSub}>
-              Your profile will be shared securely with this facility for care and identification.
+              {checkingRegistry
+                ? 'Confirming whether this facility is on NcedoCare…'
+                : isRegistered
+                  ? 'Your profile will be shared securely with this facility for care and identification.'
+                  : 'This hospital is not on NcedoCare yet. You can view it here, but you cannot save it or start an assessment until they register.'}
             </Text>
           </View>
 
-          <View style={styles.identityCard}>
-            <Text style={styles.identityCardTitle}>Your details</Text>
-            <View style={styles.identityRow}>
-              <View style={styles.identityIcon}>
-                <Ionicons name="person" size={16} color={COLORS.primary} />
+          {checkingRegistry ? (
+            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+              <ActivityIndicator color={COLORS.primary} />
+            </View>
+          ) : !isRegistered ? (
+            <View style={styles.unregisteredBanner}>
+              <Ionicons name="flag" size={18} color={COLORS.error} />
+              <Text style={styles.unregisteredBannerText}>
+                Choose a facility marked On NcedoCare to send your request to a registered care team.
+              </Text>
+            </View>
+          ) : null}
+
+          {isRegistered ? (
+            <>
+              <View style={styles.identityCard}>
+                <Text style={styles.identityCardTitle}>Your details</Text>
+                <View style={styles.identityRow}>
+                  <View style={styles.identityIcon}>
+                    <Ionicons name="person" size={16} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.identityBody}>
+                    <Text style={styles.identityLabel}>Patient</Text>
+                    <Text style={styles.identityValue}>
+                      {displayName || auth.currentUser?.email}
+                      {age != null ? ` · ${age} yrs` : ''}
+                    </Text>
+                  </View>
+                </View>
+                {idNumber ? (
+                  <View style={styles.identityRow}>
+                    <View style={styles.identityIcon}>
+                      <Ionicons name="card" size={16} color={COLORS.primary} />
+                    </View>
+                    <View style={styles.identityBody}>
+                      <Text style={styles.identityLabel}>ID / Passport</Text>
+                      <Text style={styles.identityValue}>{idNumber}</Text>
+                    </View>
+                  </View>
+                ) : null}
               </View>
-              <View style={styles.identityBody}>
-                <Text style={styles.identityLabel}>Patient</Text>
-                <Text style={styles.identityValue}>
-                  {displayName || auth.currentUser?.email}
-                  {age != null ? ` · ${age} yrs` : ''}
+
+              <View style={styles.privacyRow}>
+                <Ionicons name="lock-closed" size={16} color={COLORS.primary} />
+                <Text style={styles.privacyText}>
+                  End-to-end encrypted to {facilityName} only. No third party can access your data.
                 </Text>
               </View>
-            </View>
-            {idNumber ? (
-              <View style={styles.identityRow}>
-                <View style={styles.identityIcon}>
-                  <Ionicons name="card" size={16} color={COLORS.primary} />
-                </View>
-                <View style={styles.identityBody}>
-                  <Text style={styles.identityLabel}>ID / Passport</Text>
-                  <Text style={styles.identityValue}>{idNumber}</Text>
-                </View>
-              </View>
-            ) : null}
-          </View>
 
-          <View style={styles.privacyRow}>
-            <Ionicons name="lock-closed" size={16} color={COLORS.primary} />
-            <Text style={styles.privacyText}>
-              End-to-end encrypted to {facilityName} only. No third party can access your data.
-            </Text>
-          </View>
+              <TouchableOpacity
+                style={[styles.primaryBtn, saving && styles.btnDisabled]}
+                onPress={() => saveFacility('assessment')}
+                disabled={saving}
+                activeOpacity={0.87}>
+                <LinearGradient
+                  colors={[COLORS.primary, COLORS.primaryDark]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={styles.btnGrad}>
+                  {saving
+                    ? <ActivityIndicator color="#FFFFFF" />
+                    : (
+                      <>
+                        <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+                        <Text style={styles.primaryBtnText}>Start assessment</Text>
+                      </>
+                    )
+                  }
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          ) : null}
 
-          <TouchableOpacity
-            style={[styles.primaryBtn, saving && styles.btnDisabled]}
-            onPress={() => saveFacility('assessment')}
-            disabled={saving}
-            activeOpacity={0.87}>
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.primaryDark]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={styles.btnGrad}>
-              {saving
-                ? <ActivityIndicator color="#FFFFFF" />
-                : (
-                  <>
-                    <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-                    <Text style={styles.primaryBtnText}>Start assessment</Text>
-                  </>
-                )
-              }
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.secondaryBtn, saving && styles.btnDisabled]}
-            onPress={() => saveFacility('home')}
-            disabled={saving}
-            activeOpacity={0.87}>
-            <Ionicons name="home-outline" size={20} color={COLORS.primary} />
-            <Text style={styles.secondaryBtnText}>Done — back to My Care</Text>
-          </TouchableOpacity>
+          {checkingRegistry ? null : isRegistered ? (
+            <TouchableOpacity
+              style={[styles.secondaryBtn, saving && styles.btnDisabled]}
+              onPress={() => saveFacility('home')}
+              disabled={saving}
+              activeOpacity={0.87}>
+              <Ionicons name="home-outline" size={20} color={COLORS.primary} />
+              <Text style={styles.secondaryBtnText}>Done — back to My Care</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => router.back()}
+              activeOpacity={0.87}>
+              <Ionicons name="arrow-back" size={20} color={COLORS.primary} />
+              <Text style={styles.secondaryBtnText}>Choose another facility</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={{ height: 48 }} />
@@ -309,6 +341,25 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.success,
     borderWidth: 2, borderColor: '#FFFFFF',
     alignItems: 'center', justifyContent: 'center',
+  },
+  checkBadgeWarn: { backgroundColor: COLORS.error },
+  unregisteredBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: COLORS.errorLight,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  unregisteredBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.error,
+    lineHeight: 19,
   },
 
   welcomeText:  { fontSize: 14, color: 'rgba(255,255,255,0.80)', fontWeight: '600', marginBottom: 8 },

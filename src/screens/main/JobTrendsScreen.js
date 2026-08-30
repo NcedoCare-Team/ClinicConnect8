@@ -131,7 +131,7 @@ function liveSubForPhase(phase) {
 }
 
 export default function JobTrendsScreen({ navigation }) {
-  const { hasFacility, facilityName } = useFacility();
+  const { hasFacility, hasRegisteredFacility, facilityName } = useFacility();
   const routeParams = useLocalSearchParams();
   const [activeCase, setActiveCase] = useState(null);
   const [history, setHistory] = useState([]);
@@ -474,13 +474,15 @@ export default function JobTrendsScreen({ navigation }) {
                   If your condition worsens while waiting, tell triage staff immediately.
                 </Text>
               </View>
-            ) : !hasFacility ? (
+            ) : !hasRegisteredFacility ? (
               <TouchableOpacity
                 style={styles.startBtn}
                 onPress={() => openFacilitySelection()}
                 activeOpacity={0.85}
               >
-                <Text style={styles.startBtnText}>Choose facility</Text>
+                <Text style={styles.startBtnText}>
+                  {hasFacility ? 'Choose a registered facility' : 'Choose facility'}
+                </Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
