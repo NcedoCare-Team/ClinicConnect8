@@ -18,9 +18,42 @@ import {
 import { COLORS } from '../../constants/colors';
 import { FacilityRegistryService } from '../../services/FacilityRegistryService';
 
-// ── Nominatim API ─────────────────────────────────────────────────────────────
+// ── OSM APIs ──────────────────────────────────────────────────────────────────
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+const OVERPASS  = 'https://overpass-api.de/api/interpreter';
 const BOX_DEG   = 0.13; // ~14 km bounding box at SA latitudes
+const USER_AGENT = 'NcedoCare/1.0 healthcare-triage-app';
+
+let nearbyCache = { key: '', places: [] };
+
+function nearbyCacheKey(lat, lng) {
+  return `${Number(lat).toFixed(2)},${Number(lng).toFixed(2)}`;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function xhrGetJson(url, timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.setRequestHeader('User-Agent', USER_AGENT);
+    xhr.timeout = timeout;
+    xhr.ontimeout = () => reject(new Error('Timeout'));
+    xhr.onerror  = () => reject(new Error('Network error'));
+    xhr.onload   = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try   { resolve(JSON.parse(xhr.responseText)); }
+        catch { reject(new Error('Invalid response')); }
+      } else {
+        reject(new Error(`HTTP ${xhr.status}`));
+      }
+    };
+    xhr.send();
+  });
+}
 
 // ── Filter definitions ────────────────────────────────────────────────────────
 const FACILITY_TYPES = [
@@ -35,6 +68,12 @@ const OWNERSHIP_TYPES = [
   { id: 'all',     label: 'All'     },
   { id: 'public',  label: 'Public'  },
   { id: 'private', label: 'Private' },
+];
+
+const REGISTRATION_TYPES = [
+  { id: 'all',          label: 'All'            },
+  { id: 'registered',   label: 'Registered'     },
+  { id: 'unregistered', label: 'Not registered' },
 ];
 
 const TYPE_CONFIG = {
@@ -97,24 +136,7 @@ function nominatimFetch(amenity, lat, lng) {
     `&addressdetails=1&extratags=1`
   );
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url);
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.setRequestHeader('User-Agent', 'NcedoCare/1.0 healthcare-triage-app');
-    xhr.timeout = 15000;
-    xhr.ontimeout = () => reject(new Error('Timeout'));
-    xhr.onerror  = () => reject(new Error('Network error'));
-    xhr.onload   = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try   { resolve(JSON.parse(xhr.responseText)); }
-        catch { reject(new Error('Invalid response')); }
-      } else {
-        reject(new Error(`HTTP ${xhr.status}`));
-      }
-    };
-    xhr.send();
-  });
+  return xhrGetJson(url, 15000);
 }
 
 function nominatimTextSearch(query) {
@@ -185,15 +207,86 @@ function parseNominatimResults(allPlaces, userLat, userLng) {
     .sort((a, b) => a.distance - b.distance);
 }
 
+function parseOverpassResults(elements, userLat, userLng) {
+  const seen = new Set();
+  return (elements || [])
+    .map((el) => {
+      const tags = el.tags || {};
+      const amenity = tags.amenity;
+      if (!AMENITY_MAP[amenity]) return null;
+      const name = tags.name || tags['name:en'] || amenity;
+      if (!name) return null;
+
+      const lat = parseFloat(el.lat ?? el.center?.lat);
+      const lng = parseFloat(el.lon ?? el.center?.lon);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+
+      const key = `${name.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+
+      const addrParts = [tags['addr:street'], tags['addr:suburb'], tags['addr:city']].filter(Boolean);
+      return {
+        id: `${el.type === 'way' ? 'w' : 'n'}${el.id}`,
+        name,
+        lat,
+        lng,
+        type: AMENITY_MAP[amenity] || 'clinic',
+        ownership: guessOwnership(name, tags),
+        address: addrParts.join(', ') || tags['addr:full'] || 'South Africa',
+        phone: tags.phone || tags['contact:phone'] || '',
+        distance: haversine(userLat, userLng, lat, lng),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distance - b.distance);
+}
+
+async function overpassNearby(lat, lng) {
+  const s = lat - BOX_DEG;
+  const n = lat + BOX_DEG;
+  const w = lng - BOX_DEG;
+  const e = lng + BOX_DEG;
+  const query = `[out:json][timeout:25];(node["amenity"~"hospital|clinic|doctors|pharmacy"](${s},${w},${n},${e});way["amenity"~"hospital|clinic|doctors|pharmacy"](${s},${w},${n},${e}););out center tags;`;
+  const data = await xhrGetJson(`${OVERPASS}?data=${encodeURIComponent(query)}`, 28000);
+  return parseOverpassResults(data?.elements, lat, lng);
+}
+
+async function nominatimNearbySequential(lat, lng) {
+  const amenities = ['hospital', 'clinic', 'doctors', 'pharmacy'];
+  const allPlaces = [];
+  for (let i = 0; i < amenities.length; i += 1) {
+    if (i > 0) await delay(1100);
+    try {
+      const places = await nominatimFetch(amenities[i], lat, lng);
+      allPlaces.push(...(places || []));
+    } catch (err) {
+      if (String(err.message).includes('429')) {
+        await delay(2000);
+        try {
+          const retry = await nominatimFetch(amenities[i], lat, lng);
+          allPlaces.push(...(retry || []));
+        } catch (retryErr) {
+          console.warn('[Nominatim]', retryErr.reason?.message || retryErr.message);
+        }
+      } else {
+        console.warn('[Nominatim]', err.message);
+      }
+    }
+  }
+  return parseNominatimResults(allPlaces, lat, lng);
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function FacilitySelectionScreen() {
   const [locationStatus, setLocationStatus] = useState('loading');
   const [userLocation,   setUserLocation]   = useState(null);
-  const [facilities,     setFacilities]     = useState([]);
+  const [facilities,     setFacilities]     = useState(nearbyCache.places || []);
   const [filtered,       setFiltered]       = useState([]);
   const [search,         setSearch]         = useState('');
   const [typeFilter,     setTypeFilter]     = useState('all');
   const [ownerFilter,    setOwnerFilter]    = useState('all');
+  const [registryFilter, setRegistryFilter] = useState('all');
   const [fetching,       setFetching]       = useState(false);
   const [searching,      setSearching]      = useState(false);
   const [refreshing,     setRefreshing]     = useState(false);
@@ -225,38 +318,65 @@ export default function FacilitySelectionScreen() {
     }
   };
 
-  // ── Fetch from Nominatim (4 amenity types in parallel) ───────────────────
+  const applyPlaces = useCallback((places) => {
+    const list = places || [];
+    setFacilities(list);
+    nearbyCache = { key: nearbyCache.key, places: list };
+    FacilityRegistryService.annotatePlacesAsync(list).then((annotated) => {
+      setFacilities(annotated);
+      nearbyCache = { key: nearbyCache.key, places: annotated };
+    });
+  }, []);
+
+  // ── Nearby fetch: cache first, then Overpass (1 request), Nominatim fallback ─
   const fetchFacilities = useCallback(async (coords, isRefresh = false) => {
     if (!coords || inFlightRef.current) return;
     inFlightRef.current = true;
-    isRefresh ? setRefreshing(true) : setFetching(true);
+
+    const key = nearbyCacheKey(coords.lat, coords.lng);
+    const cached = nearbyCache.key === key && nearbyCache.places.length > 0
+      ? nearbyCache.places
+      : [];
+
+    if (cached.length && !isRefresh) {
+      setFacilities(cached);
+      setFetching(false);
+    } else if (!isRefresh) {
+      setFetching(true);
+    } else {
+      setRefreshing(true);
+    }
     if (!isRefresh) setApiError(null);
 
     try {
-      const amenities = ['hospital', 'clinic', 'doctors', 'pharmacy'];
-      const results   = await Promise.allSettled(
-        amenities.map(a => nominatimFetch(a, coords.lat, coords.lng))
-      );
+      let parsed = [];
+      try {
+        parsed = await overpassNearby(coords.lat, coords.lng);
+      } catch (overpassErr) {
+        console.warn('[Overpass]', overpassErr.message);
+        parsed = await nominatimNearbySequential(coords.lat, coords.lng);
+      }
 
-      const allPlaces = results
-        .filter(r => r.status === 'fulfilled')
-        .flatMap(r => r.value);
-
-      results
-        .filter(r => r.status === 'rejected')
-        .forEach(r => console.warn('[Nominatim]', r.reason?.message));
-
-      const parsed = parseNominatimResults(allPlaces, coords.lat, coords.lng);
-      const annotated = await FacilityRegistryService.annotatePlacesAsync(parsed);
-      setFacilities(annotated);
-
-      if (!isRefresh && parsed.length === 0 && allPlaces.length === 0) {
+      if (parsed.length > 0) {
+        nearbyCache = { key, places: parsed };
+        applyPlaces(parsed);
+        setApiError(null);
+      } else if (cached.length > 0) {
+        applyPlaces(cached);
+      } else {
         setApiError('No healthcare facilities found nearby.\n\nCheck your internet connection and try again.');
       }
     } catch (err) {
-      console.warn('[Nominatim] fetch error:', err.message);
-      if (!isRefresh) {
-        setApiError(`Could not load nearby facilities.\n${err.message}`);
+      console.warn('[Nearby] fetch error:', err.message);
+      if (cached.length > 0) {
+        applyPlaces(cached);
+      } else if (!isRefresh) {
+        const rateLimited = String(err.message).includes('429');
+        setApiError(
+          rateLimited
+            ? 'The map service is busy. Wait a few seconds and try again.'
+            : `Could not load nearby facilities.\n${err.message}`
+        );
       } else {
         Alert.alert('Refresh failed', 'Could not refresh facilities. Your previous results are still shown.');
       }
@@ -265,7 +385,7 @@ export default function FacilitySelectionScreen() {
       setRefreshing(false);
       inFlightRef.current = false;
     }
-  }, []);
+  }, [applyPlaces]);
 
   // ── Live Nominatim text search while typing ───────────────────────────────
   useEffect(() => {
@@ -311,6 +431,11 @@ export default function FacilitySelectionScreen() {
     let results = source;
     if (typeFilter  !== 'all') results = results.filter(f => f.type      === typeFilter);
     if (ownerFilter !== 'all') results = results.filter(f => f.ownership === ownerFilter);
+    if (registryFilter === 'registered') {
+      results = results.filter(f => f.isRegistered === true);
+    } else if (registryFilter === 'unregistered') {
+      results = results.filter(f => f.isRegistered !== true);
+    }
     if (search.trim().length >= 2 && remoteResults == null) {
       const q = search.trim().toLowerCase();
       results = results.filter(
@@ -318,7 +443,7 @@ export default function FacilitySelectionScreen() {
       );
     }
     setFiltered(results);
-  }, [facilities, remoteResults, typeFilter, ownerFilter, search]);
+  }, [facilities, remoteResults, typeFilter, ownerFilter, registryFilter, search]);
 
   const handleSelect = facility => {
     Keyboard.dismiss();
@@ -330,7 +455,7 @@ export default function FacilitySelectionScreen() {
     const cfg     = TYPE_CONFIG[item.type] || TYPE_CONFIG.clinic;
     const dist    = item.distance < 999 ? distanceLabel(item.distance) : null;
     const distCol = item.distance < 999 ? distanceColor(item.distance) : COLORS.textTertiary;
-    const isNearest = index === 0 && !search.trim() && typeFilter === 'all' && ownerFilter === 'all';
+    const isNearest = index === 0 && !search.trim() && typeFilter === 'all' && ownerFilter === 'all' && registryFilter === 'all';
     const unregistered = item.isRegistered !== true;
 
     return (
@@ -462,6 +587,40 @@ export default function FacilitySelectionScreen() {
         ))}
       </View>
 
+      <Text style={styles.filterLabel}>Filter by registration</Text>
+      <View style={styles.filterRow}>
+        {REGISTRATION_TYPES.map(r => {
+          const active = registryFilter === r.id;
+          const registeredActive = active && r.id === 'registered';
+          const unregisteredActive = active && r.id === 'unregistered';
+          return (
+            <TouchableOpacity
+              key={r.id}
+              style={[
+                styles.ownerChip,
+                active && styles.ownerChipActive,
+                registeredActive && styles.registryChipRegistered,
+                unregisteredActive && styles.registryChipUnregistered,
+              ]}
+              onPress={() => setRegistryFilter(r.id)}>
+              {r.id === 'registered' ? (
+                <Ionicons name="checkmark-circle" size={13} color={active ? COLORS.success : COLORS.textSecondary} />
+              ) : r.id === 'unregistered' ? (
+                <Ionicons name="flag" size={12} color={active ? COLORS.error : COLORS.textSecondary} />
+              ) : null}
+              <Text style={[
+                styles.ownerChipText,
+                active && styles.ownerChipTextActive,
+                registeredActive && { color: COLORS.success },
+                unregisteredActive && { color: COLORS.error },
+              ]}>
+                {r.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <View style={[styles.filterRow, styles.ownerRow]}>
         {OWNERSHIP_TYPES.map(o => (
           <TouchableOpacity
@@ -525,13 +684,13 @@ export default function FacilitySelectionScreen() {
         subtitle="Within 14 km of your location"
       />
 
-      {fetching ? (
+      {fetching && facilities.length === 0 ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.stateTitle}>Finding nearby facilities...</Text>
           <Text style={styles.stateSub}>Searching hospitals, clinics, pharmacies...</Text>
         </View>
-      ) : apiError ? (
+      ) : apiError && facilities.length === 0 ? (
         <View style={styles.centered}>
           <View style={styles.stateIcon}>
             <Ionicons name="cloud-offline-outline" size={40} color={COLORS.textTertiary} />
@@ -686,12 +845,15 @@ const styles = StyleSheet.create({
   filterChipTextActive: { color: '#FFFFFF' },
 
   ownerChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 9, borderRadius: 22,
     backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: COLORS.border,
   },
   ownerChipActive:     { backgroundColor: COLORS.primaryVeryLight, borderColor: COLORS.primary },
   ownerChipText:       { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary },
   ownerChipTextActive: { color: COLORS.primary },
+  registryChipRegistered:   { backgroundColor: COLORS.successLight, borderColor: COLORS.success },
+  registryChipUnregistered: { backgroundColor: COLORS.errorLight, borderColor: COLORS.error },
   resultPill: {
     marginLeft: 'auto', alignSelf: 'center',
     backgroundColor: COLORS.primaryVeryLight,
