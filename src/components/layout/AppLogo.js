@@ -1,28 +1,20 @@
-// NcedoCare brand mark — gradient logo + wordmark for headers.
+// NcedoCare brand mark — app logo image + wordmark for headers.
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, Image, StyleSheet } from 'react-native';
 import { COLORS } from '../../constants/colors';
+
+const LOGO = require('../../../assets/logo.png');
 
 export default function AppLogo({ size = 'md', showTagline = false, light = false }) {
   const markSize = size === 'lg' ? 54 : size === 'sm' ? 38 : 50;
-  const iconSize = size === 'lg' ? 28 : size === 'sm' ? 19 : 26;
   const titleSize = size === 'lg' ? 24 : size === 'sm' ? 17 : 20;
 
   return (
     <View style={styles.wrap}>
-      <LinearGradient
-        colors={light ? ['#FFFFFF', '#E0EAFF'] : [COLORS.primary, COLORS.primaryDark]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.mark, { width: markSize, height: markSize, borderRadius: markSize * 0.28 }]}>
-        <View style={styles.markInner}>
-          <Ionicons name="medical" size={iconSize} color={light ? COLORS.primary : '#FFFFFF'} />
-        </View>
-        <View style={[styles.markShine, light && { backgroundColor: 'rgba(37,99,235,0.08)' }]} />
-      </LinearGradient>
+      <View style={[styles.mark, { width: markSize, height: markSize, borderRadius: markSize * 0.28 }]}>
+        <Image source={LOGO} style={styles.markImage} resizeMode="cover" />
+      </View>
 
       <View style={styles.textBlock}>
         <Text style={[styles.title, { fontSize: titleSize }, light && styles.titleLight]}>
@@ -45,30 +37,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   mark: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
     overflow: 'hidden',
-    ...{
-      shadowColor: COLORS.primaryDark,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.28,
-      shadowRadius: 8,
-      elevation: 6,
-    },
+    shadowColor: COLORS.primaryDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  markInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  markShine: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+  markImage: {
+    width: '100%',
+    height: '100%',
   },
   textBlock: { justifyContent: 'center' },
   title: {
