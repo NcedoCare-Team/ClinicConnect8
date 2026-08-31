@@ -1,9 +1,13 @@
 import { auth } from '../../firebase';
 
-const API_CONFIG = {
-  // BASE_URL: 'http://YOUR_LOCAL_IP:5000',   
+// Set EXPO_PUBLIC_API_URL in .env to your backend URL, e.g.
+//   EXPO_PUBLIC_API_URL=http://10.250.179.104:5000        (laptop LAN IP — same private network only)
+//   EXPO_PUBLIC_API_URL=https://ncedo-api.loca.lt          (tunnel — works on any network, incl. campus Wi-Fi)
+// Restart Metro with `npx expo start --clear` after changing .env.
+const DEFAULT_BASE_URL = 'http://192.168.68.108:5000';
 
-  BASE_URL: 'http://192.168.68.108:5000',    // <-- Replace with your IP like shown above
+const API_CONFIG = {
+  BASE_URL: (process.env.EXPO_PUBLIC_API_URL || '').trim() || DEFAULT_BASE_URL,
   TIMEOUT: 90000,
 };
 
