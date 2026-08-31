@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, Platform, StatusBar, ActivityIndicator,
-  RefreshControl, Keyboard, Alert,
+  RefreshControl, Keyboard, Alert, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';      
 import { Ionicons } from '@expo/vector-icons';
@@ -569,7 +569,13 @@ export default function FacilitySelectionScreen() {
       </View>
 
       <Text style={styles.filterLabel}>Filter by type</Text>
-      <View style={styles.filterRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterScrollContent}>
         {FACILITY_TYPES.map(t => (
           <TouchableOpacity
             key={t.id}
@@ -585,10 +591,16 @@ export default function FacilitySelectionScreen() {
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       <Text style={styles.filterLabel}>Filter by registration</Text>
-      <View style={styles.filterRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterScrollContent}>
         {REGISTRATION_TYPES.map(r => {
           const active = registryFilter === r.id;
           const registeredActive = active && r.id === 'registered';
@@ -619,19 +631,27 @@ export default function FacilitySelectionScreen() {
             </TouchableOpacity>
           );
         })}
-      </View>
+      </ScrollView>
 
-      <View style={[styles.filterRow, styles.ownerRow]}>
-        {OWNERSHIP_TYPES.map(o => (
-          <TouchableOpacity
-            key={o.id}
-            style={[styles.ownerChip, ownerFilter === o.id && styles.ownerChipActive]}
-            onPress={() => setOwnerFilter(o.id)}>
-            <Text style={[styles.ownerChipText, ownerFilter === o.id && styles.ownerChipTextActive]}>
-              {o.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.ownerRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          style={styles.ownerScroll}
+          contentContainerStyle={styles.filterScrollContent}>
+          {OWNERSHIP_TYPES.map(o => (
+            <TouchableOpacity
+              key={o.id}
+              style={[styles.ownerChip, ownerFilter === o.id && styles.ownerChipActive]}
+              onPress={() => setOwnerFilter(o.id)}>
+              <Text style={[styles.ownerChipText, ownerFilter === o.id && styles.ownerChipTextActive]}>
+                {o.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         {filtered.length > 0 && (
           <View style={styles.resultPill}>
             <Text style={styles.resultCount}>
@@ -833,10 +853,12 @@ const styles = StyleSheet.create({
     fontSize: 11, fontWeight: '800', color: COLORS.textTertiary,
     textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10, marginLeft: 4,
   },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  ownerRow: { marginBottom: 8 },
+  filterScroll: { marginBottom: 12, marginHorizontal: -4 },
+  filterScrollContent: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingRight: 12 },
+  ownerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  ownerScroll: { flex: 1, marginHorizontal: -4 },
   filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0,
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 22,
     backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: COLORS.border,
   },
@@ -845,7 +867,7 @@ const styles = StyleSheet.create({
   filterChipTextActive: { color: '#FFFFFF' },
 
   ownerChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0,
     paddingHorizontal: 16, paddingVertical: 9, borderRadius: 22,
     backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: COLORS.border,
   },
@@ -855,7 +877,7 @@ const styles = StyleSheet.create({
   registryChipRegistered:   { backgroundColor: COLORS.successLight, borderColor: COLORS.success },
   registryChipUnregistered: { backgroundColor: COLORS.errorLight, borderColor: COLORS.error },
   resultPill: {
-    marginLeft: 'auto', alignSelf: 'center',
+    flexShrink: 0, alignSelf: 'center',
     backgroundColor: COLORS.primaryVeryLight,
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },

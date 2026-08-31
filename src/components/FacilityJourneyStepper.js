@@ -10,7 +10,7 @@ const STEP_ICONS = {
   waiting_nurse: 'time',
   see_nurse: 'medkit',
   waiting_doctor: 'hourglass',
-  see_doctor: 'stethoscope',
+  see_doctor: 'pulse',
   stay: 'home',
   signed_out: 'log-out',
   outcome: 'flag',
