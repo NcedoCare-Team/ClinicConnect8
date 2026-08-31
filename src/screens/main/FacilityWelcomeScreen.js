@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Platform, StatusBar, ScrollView, ActivityIndicator,
+  Platform, StatusBar, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -125,74 +125,74 @@ export default function FacilityWelcomeScreen() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" translucent />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <LinearGradient
-          colors={headerGradient}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-          style={styles.hero}>
+      <LinearGradient
+        colors={headerGradient}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={styles.hero}>
 
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <View style={styles.backBtnInner}>
-              <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.deco1} />
-          <View style={styles.deco2} />
-          <View style={styles.deco3} />
-
-          <View style={styles.successRing}>
-            <View style={styles.facilityIconRing}>
-              <Ionicons name={headerIcon} size={36} color="#FFFFFF" />
-            </View>
-            <View style={[styles.checkBadge, !isRegistered && styles.checkBadgeWarn]}>
-              <Ionicons name={isRegistered ? 'checkmark' : 'flag'} size={14} color="#FFFFFF" />
-            </View>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <View style={styles.backBtnInner}>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </View>
+        </TouchableOpacity>
 
-          <Text style={styles.welcomeText}>
-            {isRegistered ? "You're connecting to" : 'This facility is nearby'}
+        <View style={styles.deco1} />
+        <View style={styles.deco2} />
+        <View style={styles.deco3} />
+
+        <View style={styles.successRing}>
+          <View style={styles.facilityIconRing}>
+            <Ionicons name={headerIcon} size={32} color="#FFFFFF" />
+          </View>
+          <View style={[styles.checkBadge, !isRegistered && styles.checkBadgeWarn]}>
+            <Ionicons name={isRegistered ? 'checkmark' : 'flag'} size={14} color="#FFFFFF" />
+          </View>
+        </View>
+
+        <Text style={styles.welcomeText}>
+          {isRegistered ? "You're connecting to" : 'This facility is nearby'}
+        </Text>
+        <Text style={styles.facilityName} numberOfLines={2}>{facilityName}</Text>
+
+        <View style={styles.heroMetaRow}>
+          {distLabel ? (
+            <View style={styles.heroBadge}>
+              <Ionicons name="navigate" size={12} color="rgba(255,255,255,0.95)" />
+              <Text style={styles.heroBadgeText}>{distLabel}</Text>
+            </View>
+          ) : null}
+          <View style={styles.heroBadge}>
+            <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.95)" />
+            <Text style={styles.heroBadgeText} numberOfLines={1}>{facilityAddress}</Text>
+          </View>
+          <View style={styles.heroBadge}>
+            <Ionicons
+              name={facilityOwnership === 'private' ? 'card-outline' : 'shield-checkmark-outline'}
+              size={12} color="rgba(255,255,255,0.95)" />
+            <Text style={styles.heroBadgeText}>
+              {facilityOwnership === 'private' ? 'Private' : 'Public'}
+            </Text>
+          </View>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.formCard}>
+        <View style={styles.formHeader}>
+          <Text style={styles.formTitle}>
+            {checkingRegistry ? 'Checking registration' : isRegistered ? 'Ready to connect' : 'Not registered yet'}
           </Text>
-          <Text style={styles.facilityName} numberOfLines={3}>{facilityName}</Text>
+          <Text style={styles.formSub} numberOfLines={3}>
+            {checkingRegistry
+              ? 'Confirming whether this facility is on NcedoCare…'
+              : isRegistered
+                ? 'Your profile will be shared securely with this facility for care and identification.'
+                : 'This hospital is not on NcedoCare yet. You can view it here, but you cannot save it or start an assessment until they register.'}
+          </Text>
+        </View>
 
-          <View style={styles.heroMetaRow}>
-            {distLabel ? (
-              <View style={styles.heroBadge}>
-                <Ionicons name="navigate" size={12} color="rgba(255,255,255,0.95)" />
-                <Text style={styles.heroBadgeText}>{distLabel}</Text>
-              </View>
-            ) : null}
-            <View style={styles.heroBadge}>
-              <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.95)" />
-              <Text style={styles.heroBadgeText} numberOfLines={1}>{facilityAddress}</Text>
-            </View>
-            <View style={styles.heroBadge}>
-              <Ionicons
-                name={facilityOwnership === 'private' ? 'card-outline' : 'shield-checkmark-outline'}
-                size={12} color="rgba(255,255,255,0.95)" />
-              <Text style={styles.heroBadgeText}>
-                {facilityOwnership === 'private' ? 'Private' : 'Public'}
-              </Text>
-            </View>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.formCard}>
-          <View style={styles.formHeader}>
-            <Text style={styles.formTitle}>
-              {checkingRegistry ? 'Checking registration' : isRegistered ? 'Ready to connect' : 'Not registered yet'}
-            </Text>
-            <Text style={styles.formSub}>
-              {checkingRegistry
-                ? 'Confirming whether this facility is on NcedoCare…'
-                : isRegistered
-                  ? 'Your profile will be shared securely with this facility for care and identification.'
-                  : 'This hospital is not on NcedoCare yet. You can view it here, but you cannot save it or start an assessment until they register.'}
-            </Text>
-          </View>
-
+        <View style={styles.formBody}>
           {checkingRegistry ? (
-            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+            <View style={styles.checkingWrap}>
               <ActivityIndicator color={COLORS.primary} />
             </View>
           ) : !isRegistered ? (
@@ -202,9 +202,7 @@ export default function FacilityWelcomeScreen() {
                 Choose a facility marked On NcedoCare to send your request to a registered care team.
               </Text>
             </View>
-          ) : null}
-
-          {isRegistered ? (
+          ) : (
             <>
               <View style={styles.identityCard}>
                 <Text style={styles.identityCardTitle}>Your details</Text>
@@ -214,7 +212,7 @@ export default function FacilityWelcomeScreen() {
                   </View>
                   <View style={styles.identityBody}>
                     <Text style={styles.identityLabel}>Patient</Text>
-                    <Text style={styles.identityValue}>
+                    <Text style={styles.identityValue} numberOfLines={1}>
                       {displayName || auth.currentUser?.email}
                       {age != null ? ` · ${age} yrs` : ''}
                     </Text>
@@ -227,7 +225,7 @@ export default function FacilityWelcomeScreen() {
                     </View>
                     <View style={styles.identityBody}>
                       <Text style={styles.identityLabel}>ID / Passport</Text>
-                      <Text style={styles.identityValue}>{idNumber}</Text>
+                      <Text style={styles.identityValue} numberOfLines={1}>{idNumber}</Text>
                     </View>
                   </View>
                 ) : null}
@@ -239,7 +237,13 @@ export default function FacilityWelcomeScreen() {
                   End-to-end encrypted to {facilityName} only. No third party can access your data.
                 </Text>
               </View>
+            </>
+          )}
+        </View>
 
+        <View style={styles.actions}>
+          {checkingRegistry ? null : isRegistered ? (
+            <>
               <TouchableOpacity
                 style={[styles.primaryBtn, saving && styles.btnDisabled]}
                 onPress={() => saveFacility('assessment')}
@@ -260,18 +264,15 @@ export default function FacilityWelcomeScreen() {
                   }
                 </LinearGradient>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, saving && styles.btnDisabled]}
+                onPress={() => saveFacility('home')}
+                disabled={saving}
+                activeOpacity={0.87}>
+                <Ionicons name="home-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.secondaryBtnText}>Done — back to My Care</Text>
+              </TouchableOpacity>
             </>
-          ) : null}
-
-          {checkingRegistry ? null : isRegistered ? (
-            <TouchableOpacity
-              style={[styles.secondaryBtn, saving && styles.btnDisabled]}
-              onPress={() => saveFacility('home')}
-              disabled={saving}
-              activeOpacity={0.87}>
-              <Ionicons name="home-outline" size={20} color={COLORS.primary} />
-              <Text style={styles.secondaryBtnText}>Done — back to My Care</Text>
-            </TouchableOpacity>
           ) : (
             <TouchableOpacity
               style={styles.secondaryBtn}
@@ -282,20 +283,17 @@ export default function FacilityWelcomeScreen() {
             </TouchableOpacity>
           )}
         </View>
-
-        <View style={{ height: 48 }} />
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root:          { flex: 1, backgroundColor: '#F1F5F9' },
-  scrollContent: { flexGrow: 1 },
+  root: { flex: 1, backgroundColor: '#FFFFFF' },
 
   hero: {
-    paddingTop: Platform.OS === 'ios' ? 58 : (StatusBar.currentHeight || 0) + 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 0) + 16,
+    paddingBottom: 36,
     paddingHorizontal: 24,
     alignItems: 'center',
     position: 'relative',
@@ -328,9 +326,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.35)',
   },
 
-  successRing: { marginBottom: 18, marginTop: 12, position: 'relative' },
+  successRing: { marginBottom: 12, marginTop: 8, position: 'relative' },
   facilityIconRing: {
-    width: 96, height: 96, borderRadius: 30,
+    width: 84, height: 84, borderRadius: 26,
     backgroundColor: 'rgba(255,255,255,0.20)',
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.50)',
     alignItems: 'center', justifyContent: 'center',
@@ -362,10 +360,10 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  welcomeText:  { fontSize: 14, color: 'rgba(255,255,255,0.80)', fontWeight: '600', marginBottom: 8 },
+  welcomeText:  { fontSize: 13, color: 'rgba(255,255,255,0.80)', fontWeight: '600', marginBottom: 6 },
   facilityName: {
-    fontSize: 28, fontWeight: '900', color: '#FFFFFF',
-    textAlign: 'center', lineHeight: 34, letterSpacing: -0.6, marginBottom: 16,
+    fontSize: 24, fontWeight: '900', color: '#FFFFFF',
+    textAlign: 'center', lineHeight: 30, letterSpacing: -0.5, marginBottom: 12,
     paddingHorizontal: 8,
   },
   heroMetaRow:  { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
@@ -378,17 +376,21 @@ const styles = StyleSheet.create({
   heroBadgeText: { fontSize: 11, color: 'rgba(255,255,255,0.95)', fontWeight: '700' },
 
   formCard: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 32, borderTopRightRadius: 32,
-    marginTop: -24, padding: 24, flex: 1,
+    marginTop: -24, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 20,
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.08, shadowRadius: 16 },
       android: { elevation: 10 },
     }),
   },
-  formHeader: { marginBottom: 20 },
+  formHeader: { marginBottom: 14 },
   formTitle: { fontSize: 22, fontWeight: '900', color: COLORS.textPrimary, marginBottom: 6 },
-  formSub:   { fontSize: 14, color: COLORS.textSecondary, lineHeight: 21 },
+  formSub:   { fontSize: 14, color: COLORS.textSecondary, lineHeight: 20 },
+  formBody:  { flex: 1 },
+  checkingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  actions: { paddingTop: 8 },
 
   identityCard: {
     backgroundColor: COLORS.backgroundSecondary,

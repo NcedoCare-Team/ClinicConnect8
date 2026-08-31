@@ -509,6 +509,8 @@ export default function FacilitySelectionScreen() {
       setRefreshing(true);
     }
     if (!isRefresh) setApiError(null);
+    const startedAt = Date.now();
+    const holdLoader = !isRefresh && cached.length === 0;
 
     try {
       let parsed = await nominatimNearbyParallel(coords.lat, coords.lng);
@@ -517,6 +519,13 @@ export default function FacilitySelectionScreen() {
           parsed = await overpassNearby(coords.lat, coords.lng);
         } catch (overpassErr) {
           console.warn('[Overpass]', overpassErr.message);
+        }
+      }
+
+      if (holdLoader) {
+        const remain = 3000 - (Date.now() - startedAt);
+        if (remain > 0) {
+          await new Promise((resolve) => setTimeout(resolve, remain));
         }
       }
 
