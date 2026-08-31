@@ -30,11 +30,7 @@ function nearbyCacheKey(lat, lng) {
   return `${Number(lat).toFixed(2)},${Number(lng).toFixed(2)}`;
 }
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function xhrGetJson(url, timeout = 20000) {
+function xhrGetJson(url, timeout = 12000) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('GET', url);
@@ -139,37 +135,42 @@ function nominatimFetch(amenity, lat, lng) {
   return xhrGetJson(url, 15000);
 }
 
-function nominatimTextSearch(query) {
-  const url = (
-    `${NOMINATIM}?q=${encodeURIComponent(`${query} hospital clinic pharmacy South Africa`)}` +
-    `&format=json&countrycodes=za&limit=40` +
-    `&addressdetails=1&extratags=1`
-  );
+function isHealthcarePlace(place) {
+  const type = String(place.type || '').toLowerCase();
+  const cls = String(place.class || '').toLowerCase();
+  const extra = place.extratags || {};
+  const addr = place.address || {};
+  if (AMENITY_MAP[type]) return true;
+  if (addr.amenity && AMENITY_MAP[String(addr.amenity).toLowerCase()]) return true;
+  if (cls === 'healthcare' || extra.healthcare) return true;
+  if (['hospital', 'clinic', 'doctors', 'pharmacy', 'dentist', 'doctors_office'].includes(type)) return true;
+  const hay = `${place.display_name || ''} ${type} ${cls}`.toLowerCase();
+  return /\b(hospital|clinic|pharmacy|medical centre|medical center|day hospital)\b/.test(hay);
+}
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url);
-    xhr.setRequestHeader('Accept', 'application/json');
-    xhr.setRequestHeader('User-Agent', 'NcedoCare/1.0 healthcare-triage-app');
-    xhr.timeout = 15000;
-    xhr.ontimeout = () => reject(new Error('Timeout'));
-    xhr.onerror  = () => reject(new Error('Network error'));
-    xhr.onload   = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const places = JSON.parse(xhr.responseText);
-          resolve(places.filter(p => {
-            const addr = p.address || {};
-            if (addr.amenity) return true;
-            return p.class === 'amenity' && AMENITY_MAP[p.type];
-          }));
-        } catch { reject(new Error('Invalid response')); }
-      } else {
-        reject(new Error(`HTTP ${xhr.status}`));
-      }
-    };
-    xhr.send();
-  });
+function nominatimCountrySearch(query) {
+  const q = encodeURIComponent(query);
+  const url = (
+    `${NOMINATIM}?q=${q}` +
+    `&format=json&countrycodes=za&limit=50` +
+    `&addressdetails=1&extratags=1&dedupe=1`
+  );
+  return xhrGetJson(url, 15000).then((places) =>
+    (Array.isArray(places) ? places : []).filter(isHealthcarePlace)
+  );
+}
+
+async function nominatimTextSearch(query) {
+  const term = String(query || '').trim();
+  if (!term) return [];
+  const results = await Promise.allSettled([
+    nominatimCountrySearch(term),
+    nominatimCountrySearch(`${term} hospital`),
+    nominatimCountrySearch(`${term} clinic`),
+  ]);
+  return results
+    .filter((r) => r.status === 'fulfilled')
+    .flatMap((r) => r.value || []);
 }
 
 // ── Parse Nominatim results into app facility objects ─────────────────────────
@@ -189,7 +190,12 @@ function parseNominatimResults(allPlaces, userLat, userLng) {
       seen.add(key);
 
       const dist = haversine(userLat, userLng, lat, lng);
-      const addrParts = [addr.road, addr.suburb, addr.city || addr.town].filter(Boolean);
+      const addrParts = [
+        addr.road,
+        addr.suburb,
+        addr.city || addr.town || addr.village,
+        addr.state,
+      ].filter(Boolean);
 
       return {
         id:        `${place.osm_type || 'n'}${place.osm_id || place.place_id}`,
@@ -247,34 +253,189 @@ async function overpassNearby(lat, lng) {
   const n = lat + BOX_DEG;
   const w = lng - BOX_DEG;
   const e = lng + BOX_DEG;
-  const query = `[out:json][timeout:25];(node["amenity"~"hospital|clinic|doctors|pharmacy"](${s},${w},${n},${e});way["amenity"~"hospital|clinic|doctors|pharmacy"](${s},${w},${n},${e}););out center tags;`;
-  const data = await xhrGetJson(`${OVERPASS}?data=${encodeURIComponent(query)}`, 28000);
+  const query = `[out:json][timeout:8];(node["amenity"~"hospital|clinic|doctors|pharmacy"](${s},${w},${n},${e});way["amenity"~"hospital|clinic|doctors|pharmacy"](${s},${w},${n},${e}););out center tags;`;
+  const data = await xhrGetJson(`${OVERPASS}?data=${encodeURIComponent(query)}`, 9000);
   return parseOverpassResults(data?.elements, lat, lng);
 }
 
-async function nominatimNearbySequential(lat, lng) {
+async function nominatimNearbyParallel(lat, lng) {
   const amenities = ['hospital', 'clinic', 'doctors', 'pharmacy'];
-  const allPlaces = [];
-  for (let i = 0; i < amenities.length; i += 1) {
-    if (i > 0) await delay(1100);
-    try {
-      const places = await nominatimFetch(amenities[i], lat, lng);
-      allPlaces.push(...(places || []));
-    } catch (err) {
-      if (String(err.message).includes('429')) {
-        await delay(2000);
-        try {
-          const retry = await nominatimFetch(amenities[i], lat, lng);
-          allPlaces.push(...(retry || []));
-        } catch (retryErr) {
-          console.warn('[Nominatim]', retryErr.reason?.message || retryErr.message);
-        }
-      } else {
-        console.warn('[Nominatim]', err.message);
-      }
-    }
-  }
+  const results = await Promise.allSettled(
+    amenities.map((a) => nominatimFetch(a, lat, lng))
+  );
+  const allPlaces = results
+    .filter((r) => r.status === 'fulfilled')
+    .flatMap((r) => r.value || []);
+  results
+    .filter((r) => r.status === 'rejected')
+    .forEach((r) => console.warn('[Nominatim]', r.reason?.message));
   return parseNominatimResults(allPlaces, lat, lng);
+}
+
+function FacilitySearchBar({
+  search,
+  onChangeSearch,
+  searching,
+  searchRef,
+  searchFocused,
+  onSearchFocus,
+  onSearchBlur,
+  onDismissKeyboard,
+}) {
+  return (
+    <View style={styles.searchSticky}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={COLORS.primary} />
+        <TextInput
+          ref={searchRef}
+          style={styles.searchInput}
+          placeholder="Search any hospital in South Africa..."
+          placeholderTextColor={COLORS.textTertiary}
+          value={search}
+          onChangeText={onChangeSearch}
+          onFocus={onSearchFocus}
+          onBlur={onSearchBlur}
+          onSubmitEditing={onDismissKeyboard}
+          autoCorrect={false}
+          autoCapitalize="none"
+          spellCheck={false}
+          blurOnSubmit
+          returnKeyType="search"
+          keyboardType={Platform.OS === 'ios' ? 'web-search' : 'default'}
+          enablesReturnKeyAutomatically
+          accessibilityLabel="Search facilities"
+        />
+        {searching ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
+        {search.length > 0 ? (
+          <TouchableOpacity
+            onPress={() => onChangeSearch('')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Clear search">
+            <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+        {searchFocused ? (
+          <TouchableOpacity
+            onPress={onDismissKeyboard}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.keyboardDismissBtn}
+            accessibilityLabel="Close keyboard">
+            <Text style={styles.keyboardDismissText}>Done</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function FacilityFilterRows({
+  typeFilter,
+  onTypeFilter,
+  registryFilter,
+  onRegistryFilter,
+  ownerFilter,
+  onOwnerFilter,
+  resultLabel,
+  searchingNationwide,
+}) {
+  return (
+    <View style={styles.filterBlock}>
+      <Text style={styles.filterCaption}>
+        {searchingNationwide
+          ? 'Searching hospitals across South Africa'
+          : 'Nearby within 14 km · search nationwide'}
+      </Text>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterScrollContent}>
+        {FACILITY_TYPES.map((t) => (
+          <TouchableOpacity
+            key={t.id}
+            style={[styles.filterChip, typeFilter === t.id && styles.filterChipActive]}
+            onPress={() => onTypeFilter(t.id)}>
+            <Ionicons
+              name={t.icon}
+              size={13}
+              color={typeFilter === t.id ? '#FFFFFF' : COLORS.textSecondary}
+            />
+            <Text style={[styles.filterChipText, typeFilter === t.id && styles.filterChipTextActive]}>
+              {t.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterScrollContent}>
+        {REGISTRATION_TYPES.map((r) => {
+          const active = registryFilter === r.id;
+          const registeredActive = active && r.id === 'registered';
+          const unregisteredActive = active && r.id === 'unregistered';
+          return (
+            <TouchableOpacity
+              key={r.id}
+              style={[
+                styles.ownerChip,
+                active && styles.ownerChipActive,
+                registeredActive && styles.registryChipRegistered,
+                unregisteredActive && styles.registryChipUnregistered,
+              ]}
+              onPress={() => onRegistryFilter(r.id)}>
+              {r.id === 'registered' ? (
+                <Ionicons name="checkmark-circle" size={13} color={active ? COLORS.success : COLORS.textSecondary} />
+              ) : r.id === 'unregistered' ? (
+                <Ionicons name="flag" size={12} color={active ? COLORS.error : COLORS.textSecondary} />
+              ) : null}
+              <Text style={[
+                styles.ownerChipText,
+                active && styles.ownerChipTextActive,
+                registeredActive && { color: COLORS.success },
+                unregisteredActive && { color: COLORS.error },
+              ]}>
+                {r.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <View style={styles.ownerRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          style={styles.ownerScroll}
+          contentContainerStyle={styles.filterScrollContent}>
+          {OWNERSHIP_TYPES.map((o) => (
+            <TouchableOpacity
+              key={o.id}
+              style={[styles.ownerChip, ownerFilter === o.id && styles.ownerChipActive]}
+              onPress={() => onOwnerFilter(o.id)}>
+              <Text style={[styles.ownerChipText, ownerFilter === o.id && styles.ownerChipTextActive]}>
+                {o.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        {resultLabel ? (
+          <View style={styles.resultPill}>
+            <Text style={styles.resultCount}>{resultLabel}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -292,6 +453,7 @@ export default function FacilitySelectionScreen() {
   const [refreshing,     setRefreshing]     = useState(false);
   const [apiError,       setApiError]       = useState(null);
   const [remoteResults,  setRemoteResults]  = useState(null);
+  const [searchFocused,  setSearchFocused]  = useState(false);
   const searchRef   = useRef(null);
   const inFlightRef = useRef(false);
   const searchTimerRef = useRef(null);
@@ -328,7 +490,7 @@ export default function FacilitySelectionScreen() {
     });
   }, []);
 
-  // ── Nearby fetch: cache first, then Overpass (1 request), Nominatim fallback ─
+  // ── Nearby fetch: Nominatim first (fast), Overpass only if empty ───────────
   const fetchFacilities = useCallback(async (coords, isRefresh = false) => {
     if (!coords || inFlightRef.current) return;
     inFlightRef.current = true;
@@ -349,12 +511,13 @@ export default function FacilitySelectionScreen() {
     if (!isRefresh) setApiError(null);
 
     try {
-      let parsed = [];
-      try {
-        parsed = await overpassNearby(coords.lat, coords.lng);
-      } catch (overpassErr) {
-        console.warn('[Overpass]', overpassErr.message);
-        parsed = await nominatimNearbySequential(coords.lat, coords.lng);
+      let parsed = await nominatimNearbyParallel(coords.lat, coords.lng);
+      if (!parsed.length) {
+        try {
+          parsed = await overpassNearby(coords.lat, coords.lng);
+        } catch (overpassErr) {
+          console.warn('[Overpass]', overpassErr.message);
+        }
       }
 
       if (parsed.length > 0) {
@@ -410,15 +573,16 @@ export default function FacilitySelectionScreen() {
         const origin = userLocation || { lat: -26.2041, lng: 28.0473 };
         const parsed = parseNominatimResults(places, origin.lat, origin.lng);
         const annotated = await FacilityRegistryService.annotatePlacesAsync(parsed);
+        if (reqId !== searchReqRef.current) return;
         setRemoteResults(annotated);
       } catch (err) {
         if (reqId !== searchReqRef.current) return;
         console.warn('[Nominatim] text search:', err.message);
-        setRemoteResults([]);
+        setRemoteResults(null);
       } finally {
         if (reqId === searchReqRef.current) setSearching(false);
       }
-    }, 400);
+    }, 280);
 
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -427,8 +591,29 @@ export default function FacilitySelectionScreen() {
 
   // ── Client-side filter + search ───────────────────────────────────────────
   useEffect(() => {
-    const source = search.trim().length >= 2 && remoteResults != null ? remoteResults : facilities;
-    let results = source;
+    const q = search.trim().toLowerCase();
+    const matchesQuery = (f) =>
+      !q || f.name.toLowerCase().includes(q) || (f.address || '').toLowerCase().includes(q);
+
+    let results;
+    if (q) {
+      const localHits = facilities.filter(matchesQuery);
+      if (remoteResults?.length) {
+        const seen = new Set(localHits.map((f) => f.id));
+        results = [...localHits];
+        remoteResults.forEach((f) => {
+          if (!seen.has(f.id)) {
+            seen.add(f.id);
+            results.push(f);
+          }
+        });
+      } else {
+        results = localHits;
+      }
+    } else {
+      results = facilities;
+    }
+
     if (typeFilter  !== 'all') results = results.filter(f => f.type      === typeFilter);
     if (ownerFilter !== 'all') results = results.filter(f => f.ownership === ownerFilter);
     if (registryFilter === 'registered') {
@@ -436,17 +621,17 @@ export default function FacilitySelectionScreen() {
     } else if (registryFilter === 'unregistered') {
       results = results.filter(f => f.isRegistered !== true);
     }
-    if (search.trim().length >= 2 && remoteResults == null) {
-      const q = search.trim().toLowerCase();
-      results = results.filter(
-        f => f.name.toLowerCase().includes(q) || f.address.toLowerCase().includes(q)
-      );
-    }
     setFiltered(results);
   }, [facilities, remoteResults, typeFilter, ownerFilter, registryFilter, search]);
 
-  const handleSelect = facility => {
+  const dismissSearchKeyboard = useCallback(() => {
+    searchRef.current?.blur();
     Keyboard.dismiss();
+    setSearchFocused(false);
+  }, []);
+
+  const handleSelect = (facility) => {
+    dismissSearchKeyboard();
     openFacilityWelcome(facility, userLocation);
   };
 
@@ -532,136 +717,25 @@ export default function FacilitySelectionScreen() {
     );
   };
 
-  const ListHeader = () => (
-    <>
-      <View style={styles.heroHint}>
-        <Ionicons name="navigate-circle" size={18} color={COLORS.primary} />
-        <Text style={styles.heroHintText}>
-          All nearby hospitals are listed. Only facilities registered on NcedoCare can receive your assessment.
-        </Text>
-      </View>
-
-      <View style={styles.searchWrap}>
-        <LinearGradient
-          colors={['#FFFFFF', COLORS.primaryVeryLight]}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-          style={styles.searchGradient}>
-          <Ionicons name="search" size={18} color={COLORS.primary} />
-          <TextInput
-            ref={searchRef}
-            style={styles.searchInput}
-            placeholder="Search hospitals, clinics, area..."
-            placeholderTextColor={COLORS.textTertiary}
-            value={search}
-            onChangeText={setSearch}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
-            </TouchableOpacity>
-          )}
-          {searching && (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          )}
-        </LinearGradient>
-      </View>
-
-      <Text style={styles.filterLabel}>Filter by type</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-        style={styles.filterScroll}
-        contentContainerStyle={styles.filterScrollContent}>
-        {FACILITY_TYPES.map(t => (
-          <TouchableOpacity
-            key={t.id}
-            style={[styles.filterChip, typeFilter === t.id && styles.filterChipActive]}
-            onPress={() => setTypeFilter(t.id)}>
-            <Ionicons
-              name={t.icon}
-              size={13}
-              color={typeFilter === t.id ? '#FFFFFF' : COLORS.textSecondary}
-            />
-            <Text style={[styles.filterChipText, typeFilter === t.id && styles.filterChipTextActive]}>
-              {t.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      <Text style={styles.filterLabel}>Filter by registration</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-        style={styles.filterScroll}
-        contentContainerStyle={styles.filterScrollContent}>
-        {REGISTRATION_TYPES.map(r => {
-          const active = registryFilter === r.id;
-          const registeredActive = active && r.id === 'registered';
-          const unregisteredActive = active && r.id === 'unregistered';
-          return (
-            <TouchableOpacity
-              key={r.id}
-              style={[
-                styles.ownerChip,
-                active && styles.ownerChipActive,
-                registeredActive && styles.registryChipRegistered,
-                unregisteredActive && styles.registryChipUnregistered,
-              ]}
-              onPress={() => setRegistryFilter(r.id)}>
-              {r.id === 'registered' ? (
-                <Ionicons name="checkmark-circle" size={13} color={active ? COLORS.success : COLORS.textSecondary} />
-              ) : r.id === 'unregistered' ? (
-                <Ionicons name="flag" size={12} color={active ? COLORS.error : COLORS.textSecondary} />
-              ) : null}
-              <Text style={[
-                styles.ownerChipText,
-                active && styles.ownerChipTextActive,
-                registeredActive && { color: COLORS.success },
-                unregisteredActive && { color: COLORS.error },
-              ]}>
-                {r.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      <View style={styles.ownerRow}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          style={styles.ownerScroll}
-          contentContainerStyle={styles.filterScrollContent}>
-          {OWNERSHIP_TYPES.map(o => (
-            <TouchableOpacity
-              key={o.id}
-              style={[styles.ownerChip, ownerFilter === o.id && styles.ownerChipActive]}
-              onPress={() => setOwnerFilter(o.id)}>
-              <Text style={[styles.ownerChipText, ownerFilter === o.id && styles.ownerChipTextActive]}>
-                {o.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        {filtered.length > 0 && (
-          <View style={styles.resultPill}>
-            <Text style={styles.resultCount}>
-              {search.trim().length >= 2 ? `${filtered.length} found` : `${filtered.length} nearby`}
-            </Text>
-          </View>
-        )}
-      </View>
-    </>
+  const listHeader = (
+    <FacilityFilterRows
+      typeFilter={typeFilter}
+      onTypeFilter={setTypeFilter}
+      registryFilter={registryFilter}
+      onRegistryFilter={setRegistryFilter}
+      ownerFilter={ownerFilter}
+      onOwnerFilter={setOwnerFilter}
+      searchingNationwide={Boolean(search.trim())}
+      resultLabel={
+        filtered.length > 0
+          ? (search.trim() ? `${filtered.length} found` : `${filtered.length} nearby`)
+          : ''
+      }
+    />
   );
+
+  // Kept so Fast Refresh from earlier edits does not crash on a stale render.
+  const renderSearchAndFilters = () => listHeader;
 
   if (locationStatus === 'loading') {
     return (
@@ -701,7 +775,7 @@ export default function FacilitySelectionScreen() {
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} translucent />
       <ScreenHeader
         onBack={handleBack}
-        subtitle="Within 14 km of your location"
+        subtitle="Nearby 14 km · search all of South Africa"
       />
 
       {fetching && facilities.length === 0 ? (
@@ -722,14 +796,29 @@ export default function FacilitySelectionScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item.id}
-          renderItem={renderFacility}
-          ListHeaderComponent={ListHeader}
-          contentContainerStyle={styles.listContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        <View style={styles.listWrap}>
+          <FacilitySearchBar
+            search={search}
+            onChangeSearch={setSearch}
+            searching={searching}
+            searchRef={searchRef}
+            searchFocused={searchFocused}
+            onSearchFocus={() => setSearchFocused(true)}
+            onSearchBlur={() => setSearchFocused(false)}
+            onDismissKeyboard={dismissSearchKeyboard}
+          />
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => item.id}
+            renderItem={renderFacility}
+            ListHeaderComponent={renderSearchAndFilters()}
+            contentContainerStyle={styles.listContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={8}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -742,16 +831,17 @@ export default function FacilitySelectionScreen() {
               <Ionicons name="search-outline" size={40} color={COLORS.textTertiary} />
               <Text style={styles.stateTitle}>No facilities found</Text>
               <Text style={styles.stateSub}>
-                {search.trim().length >= 2
+                {search.trim()
                   ? searching
-                    ? 'Searching OpenStreetMap...'
-                    : 'Try a different search term or clear the filter'
-                  : 'No facilities found within 14 km. Pull down to refresh.'}
+                    ? 'Searching hospitals across South Africa...'
+                    : 'Try the hospital name, suburb, or city'
+                  : 'No facilities found within 14 km. Pull down to refresh, or search nationwide.'}
               </Text>
             </View>
           }
           ListFooterComponent={<View style={{ height: 40 }} />}
-        />
+          />
+        </View>
       )}
     </View>
   );
@@ -828,34 +918,34 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', zIndex: 2,
   },
 
-  listContent: { paddingTop: 8, paddingHorizontal: 18, paddingBottom: 8 },
+  listWrap: { flex: 1 },
+  listContent: { paddingTop: 6, paddingHorizontal: 18, paddingBottom: 8 },
 
-  heroHint: {
+  searchSticky: {
+    paddingHorizontal: 18, paddingTop: 10, paddingBottom: 8,
+    backgroundColor: '#F1F5F9',
+    borderBottomWidth: 1, borderBottomColor: COLORS.borderLight,
+  },
+  searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#FFFFFF', borderRadius: 14,
-    padding: 14, marginBottom: 14,
-    borderWidth: 1, borderColor: COLORS.primaryGlow,
-    ...cardShadow,
+    paddingHorizontal: 14, height: 48,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5, borderColor: COLORS.primaryGlow, borderRadius: 14,
   },
-  heroHintText: {
-    flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.textSecondary, lineHeight: 18,
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.textPrimary, fontWeight: '500', paddingVertical: 0 },
+  keyboardDismissBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+    backgroundColor: COLORS.primaryVeryLight,
   },
-
-  searchWrap: { marginBottom: 16, borderRadius: 16, overflow: 'hidden', ...cardShadow },
-  searchGradient: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, height: 54,
-    borderWidth: 1.5, borderColor: COLORS.primaryGlow, borderRadius: 16,
+  keyboardDismissText: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
+  filterBlock: { paddingBottom: 4 },
+  filterCaption: {
+    fontSize: 12, fontWeight: '600', color: COLORS.textTertiary,
+    marginBottom: 10, marginLeft: 2, lineHeight: 16,
   },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.textPrimary, fontWeight: '500' },
-
-  filterLabel: {
-    fontSize: 11, fontWeight: '800', color: COLORS.textTertiary,
-    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10, marginLeft: 4,
-  },
-  filterScroll: { marginBottom: 12, marginHorizontal: -4 },
+  filterScroll: { marginBottom: 8, marginHorizontal: -4 },
   filterScrollContent: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingRight: 12 },
-  ownerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  ownerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 8 },
   ownerScroll: { flex: 1, marginHorizontal: -4 },
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0,
