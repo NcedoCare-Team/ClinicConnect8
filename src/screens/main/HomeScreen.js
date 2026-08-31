@@ -69,37 +69,31 @@ export default function HomeScreen({ navigation }) {
       setLoading(false);
       return;
     }
-    let cancelled = false;
-    const unsubRef = { current: null };
-    (async () => {
-      const profile = await UserProfileService.getProfile();
-      if (cancelled) return;
+
+    UserProfileService.getProfile().then((profile) => {
       const sessionFacility = SessionService.getFacilityName();
       setFacility(sessionFacility || profile.primaryFacility || profile.location || '');
+    }).catch(() => {});
 
-      unsubRef.current = onSnapshot(
-        query(
-          collection(firestore, COLLECTIONS.TRIAGE_CASES),
-          where('patientId', '==', uid),
-          orderBy('createdAt', 'desc'),
-          limit(8),
-        ),
-        (snap) => {
-          const cases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setLiveCase(cases.find((c) => isVisitLive(c)) || null);
-          setHistoryItems(cases.filter((c) => !isVisitLive(c)).slice(0, 4));
-          setLoading(false);
-        },
-        () => {
-          setLoading(false);
-        }
-      );
-    })();
+    const unsub = onSnapshot(
+      query(
+        collection(firestore, COLLECTIONS.TRIAGE_CASES),
+        where('patientId', '==', uid),
+        orderBy('createdAt', 'desc'),
+        limit(8),
+      ),
+      (snap) => {
+        const cases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setLiveCase(cases.find((c) => isVisitLive(c)) || null);
+        setHistoryItems(cases.filter((c) => !isVisitLive(c)).slice(0, 4));
+        setLoading(false);
+      },
+      () => {
+        setLoading(false);
+      }
+    );
 
-    return () => {
-      cancelled = true;
-      if (unsubRef.current) unsubRef.current();
-    };
+    return () => unsub();
   }, []);
 
   const handleChangeFacility = () => {
@@ -166,47 +160,46 @@ export default function HomeScreen({ navigation }) {
           </LinearGradient>
         </TouchableOpacity>
 
-        {loading ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color={COLORS.primary} />
-          </View>
-        ) : (
-          <View style={styles.timelineBlock}>
-            <TouchableOpacity
-              style={styles.liveJourneyCard}
-              onPress={() => openPatientJourney('JourneyMain', { tab: 'live' })}
-              activeOpacity={0.88}
-            >
-              <View style={styles.liveJourneyHead}>
-                <View>
-                  <Text style={styles.liveKicker}>
-                    {liveCase ? 'Live visit' : hasFacility ? 'Ready to start' : 'Get started'}
-                  </Text>
-                  <Text style={styles.liveTitle}>
-                    {liveCase
-                      ? facilityJourneyLabel(getFacilityJourneyPhase(liveCase)) || 'In progress'
-                      : hasFacility
-                        ? 'Start assessment'
-                        : 'Choose a facility'}
+        <View style={styles.timelineBlock}>
+          <TouchableOpacity
+            style={styles.liveJourneyCard}
+            onPress={() => openPatientJourney('JourneyMain', { tab: 'live' })}
+            activeOpacity={0.88}
+          >
+            <View style={styles.liveJourneyHead}>
+              <View>
+                <Text style={styles.liveKicker}>
+                  {liveCase ? 'Live visit' : hasFacility ? 'Ready to start' : 'Get started'}
+                </Text>
+                <Text style={styles.liveTitle}>
+                  {liveCase
+                    ? facilityJourneyLabel(getFacilityJourneyPhase(liveCase)) || 'In progress'
+                    : hasFacility
+                      ? 'Start assessment'
+                      : 'Choose a facility'}
+                </Text>
+              </View>
+              {liveCase ? (
+                <View style={[styles.timelineBadge, { backgroundColor: statusBadgeForCase(liveCase).bg }]}>
+                  <Text style={[styles.timelineBadgeText, { color: statusBadgeForCase(liveCase).color }]}>
+                    {statusBadgeForCase(liveCase).label}
                   </Text>
                 </View>
-                {liveCase ? (
-                  <View style={[styles.timelineBadge, { backgroundColor: statusBadgeForCase(liveCase).bg }]}>
-                    <Text style={[styles.timelineBadgeText, { color: statusBadgeForCase(liveCase).color }]}>
-                      {statusBadgeForCase(liveCase).label}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <FacilityJourneyStepper
-                caseData={liveCase}
-                compact
-                hasFacility={hasFacility}
-                facilityName={facilityDisplay}
-              />
-            </TouchableOpacity>
+              ) : null}
+            </View>
+            <FacilityJourneyStepper
+              caseData={liveCase}
+              compact
+              hasFacility={hasFacility}
+              facilityName={facilityDisplay}
+            />
+          </TouchableOpacity>
 
-            {historyItems.length > 0 ? (
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={COLORS.primary} />
+            </View>
+          ) : historyItems.length > 0 ? (
               <>
                 <Text style={styles.recentLabel}>Recent signed-out visits</Text>
                 <ScrollView
@@ -252,7 +245,6 @@ export default function HomeScreen({ navigation }) {
               </>
             ) : null}
           </View>
-        )}
 
         {/* Community Health Insights — vertical list */}
         <Text style={[styles.sectionTitle, { marginBottom: 12, marginTop: 4 }]}>

@@ -28,24 +28,25 @@ export const FacilityProvider = ({ children }) => {
       setReady(true);
       return;
     }
-    setReady(false);
     const loaded = await SessionService.loadForUser(uid);
-    if (loaded?.facilityId || loaded?.facilityName) {
-      const ok = await FacilityRegistryService.isPlaceRegistered({
-        id: loaded.facilityId,
-        name: loaded.facilityName,
-        lat: loaded.facilityLat,
-        lng: loaded.facilityLng,
-        isRegistered: loaded.facilityRegistered,
-        registeredId: loaded.facilityId,
-      });
-      loaded.facilityRegistered = ok;
-      await SessionService.setSession(loaded);
-      setSessionState(loaded);
-    } else {
-      setSessionState(loaded);
-    }
+    setSessionState(loaded);
     setReady(true);
+
+    if (!loaded?.facilityId && !loaded?.facilityName) return;
+
+    FacilityRegistryService.isPlaceRegistered({
+      id: loaded.facilityId,
+      name: loaded.facilityName,
+      lat: loaded.facilityLat,
+      lng: loaded.facilityLng,
+      isRegistered: loaded.facilityRegistered,
+      registeredId: loaded.facilityId,
+    }).then(async (ok) => {
+      if (loaded.facilityRegistered === ok) return;
+      const next = { ...loaded, facilityRegistered: ok };
+      await SessionService.setSession(next);
+      setSessionState(next);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
