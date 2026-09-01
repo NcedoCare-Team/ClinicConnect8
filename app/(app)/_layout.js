@@ -1,45 +1,64 @@
-import { NativeTabs, Label, Icon } from 'expo-router/unstable-native-tabs';
-import { useColorScheme } from 'react-native';
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Platform, useColorScheme } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../src/constants/colors';
+import { TAB_BAR_HEIGHT } from '../../src/constants/layout';
 import { useTabStackReset } from '../../src/hooks/useTabStackReset';
 import { PATIENT_TAB_ROOTS } from '../../src/navigation/openPatientTab';
+
+function tabIcon(outline, filled) {
+  return ({ color, focused, size }) => (
+    <Ionicons name={focused ? filled : outline} size={size ?? 24} color={color} />
+  );
+}
 
 export default function PatientTabLayout() {
   useTabStackReset(PATIENT_TAB_ROOTS, '(app)');
 
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
+  const insets = useSafeAreaInsets();
+
+  const bottomInset = Platform.OS === 'android' ? insets.bottom : Math.max(insets.bottom, 0);
 
   return (
-    <NativeTabs
-      backgroundColor={isDark ? COLORS.inkDark : COLORS.white}
-      indicatorColor={isDark ? COLORS.inkSoft : COLORS.backgroundSecondary}
-      labelStyle={{ selected: { color: COLORS.primary } }}
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: isDark ? COLORS.textTertiary : COLORS.inkLight,
+        tabBarStyle: {
+          backgroundColor: isDark ? COLORS.inkDark : COLORS.white,
+          borderTopColor: isDark ? COLORS.inkSoft : COLORS.borderLight,
+          borderTopWidth: 1,
+          height: TAB_BAR_HEIGHT + bottomInset,
+          paddingBottom: bottomInset + 6,
+          paddingTop: 6,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+      }}
     >
-      <NativeTabs.Trigger name="home">
-        <Label>Care</Label>
-        <Icon sf={{ default: 'heart', selected: 'heart.fill' }} />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="assessment">
-        <Label>Assess</Label>
-        <Icon sf={{ default: 'sparkles', selected: 'sparkles' }} />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="journey">
-        <Label>Journey</Label>
-        <Icon sf={{ default: 'point.3.connected.trianglepath.dotted', selected: 'point.3.connected.trianglepath.dotted' }} />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="insights">
-        <Label>Insights</Label>
-        <Icon sf={{ default: 'newspaper', selected: 'newspaper.fill' }} />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="profile">
-        <Label>Profile</Label>
-        <Icon sf={{ default: 'person.circle', selected: 'person.circle.fill' }} />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+      <Tabs.Screen
+        name="home"
+        options={{ title: 'Care', tabBarIcon: tabIcon('heart-outline', 'heart') }}
+      />
+      <Tabs.Screen
+        name="assessment"
+        options={{ title: 'Assess', tabBarIcon: tabIcon('sparkles-outline', 'sparkles') }}
+      />
+      <Tabs.Screen
+        name="journey"
+        options={{ title: 'Journey', tabBarIcon: tabIcon('footsteps-outline', 'footsteps') }}
+      />
+      <Tabs.Screen
+        name="insights"
+        options={{ title: 'Insights', tabBarIcon: tabIcon('newspaper-outline', 'newspaper') }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{ title: 'Profile', tabBarIcon: tabIcon('person-circle-outline', 'person-circle') }}
+      />
+    </Tabs>
   );
 }
