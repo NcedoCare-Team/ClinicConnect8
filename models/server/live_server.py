@@ -34,6 +34,7 @@
 import asyncio
 import io
 import json
+import re
 import base64
 import os
 import shutil
@@ -346,6 +347,42 @@ def _release_clinical_attribute(binding, attribute):
     return {"attribute": attribute, "available": False, "reason": "not_allowed"}
 
 
+def _as_string_list(value):
+    """Gemini sometimes returns riskIndicators as a string or object — always store string[]."""
+    if value is None or value is False:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text[0] in "[(":
+            try:
+                parsed = json.loads(text.replace("'", '"'))
+                if isinstance(parsed, list):
+                    return _as_string_list(parsed)
+            except Exception:
+                pass
+            text = text.strip("[]() ")
+        return [part.strip() for part in re.split(r"[,;\n]+", text) if part.strip()]
+    if isinstance(value, dict):
+        return [str(v).strip() for v in value.values() if v not in (None, "")]
+    if isinstance(value, (list, tuple, set)):
+        out = []
+        for item in value:
+            if isinstance(item, str):
+                s = item.strip()
+                if s:
+                    out.append(s)
+            else:
+                out.extend(_as_string_list(item))
+        return out
+    try:
+        return _as_string_list(list(value))
+    except Exception:
+        s = str(value).strip()
+        return [s] if s else []
+
+
 def _execute_submit_triage(binding, args, conversation_id, id_token):
     priority = (args.get("priority") or "MEDIUM").upper()
     if priority not in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
@@ -372,7 +409,9 @@ def _execute_submit_triage(binding, args, conversation_id, id_token):
         "confidence": confidence,
         "reasoning": args.get("reasoning") or "",
         "aiReasoning": args.get("reasoning") or "",
-        "riskIndicators": args.get("risk_indicators") or args.get("riskIndicators") or [],
+        "riskIndicators": _as_string_list(
+            args.get("risk_indicators") or args.get("riskIndicators")
+        ),
         "recommendedAction": args.get("recommended_action") or args.get("recommendedAction") or "",
         "estimatedWaitMinutes": wait_mins,
         "estimatedWait": wait_label,

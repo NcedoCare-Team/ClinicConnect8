@@ -27,6 +27,7 @@ import { SessionService } from '../../services/SessionService';
 import MessageBubble from './components/MessageBubble';
 import ChatInput from './components/ChatInput';
 import FacilityJourneyStepper from '../../components/FacilityJourneyStepper';
+import { withNormalizedTriageFields } from '../../utils/clinicalFields';
 import {
   getFacilityJourneyPhase,
   facilityJourneyLabel,
@@ -433,7 +434,7 @@ export default function ChatConversationScreen() {
           ...safeFields
         } = fallbackFields;
         const ref = await addDoc(collection(firestore, COLLECTIONS.TRIAGE_CASES), {
-          ...safeFields,
+          ...withNormalizedTriageFields(safeFields),
           source: safeFields.source || 'ai_interview',
           createdAt: serverTimestamp(),
           waitUpdatedAt: serverTimestamp(),

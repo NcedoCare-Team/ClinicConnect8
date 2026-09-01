@@ -7,7 +7,9 @@ import google.generativeai as genai
 from datetime import datetime
 import os
 import json
+import re
 import socket
+from collections.abc import Iterable, Mapping
 import threading
 from dotenv import load_dotenv
 import tempfile
@@ -333,7 +335,9 @@ def _execute_submit_triage(binding, args, conversation_id, id_token):
         "confidence": confidence,
         "reasoning": args.get("reasoning") or "",
         "aiReasoning": args.get("reasoning") or "",
-        "riskIndicators": args.get("risk_indicators") or args.get("riskIndicators") or [],
+        "riskIndicators": _as_string_list(
+            args.get("risk_indicators") or args.get("riskIndicators")
+        ),
         "recommendedAction": args.get("recommended_action") or args.get("recommendedAction") or "",
         "estimatedWaitMinutes": wait_mins,
         "estimatedWait": wait_label,
@@ -376,20 +380,56 @@ def _extract_function_calls(response):
     return calls
 
 
+def _as_string_list(value):
+    """Gemini sometimes returns riskIndicators as a string or proto list — always store string[]."""
+    if value is None or value is False:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text[0] in "[(":
+            try:
+                parsed = json.loads(text.replace("'", '"'))
+                if isinstance(parsed, list):
+                    return _as_string_list(parsed)
+            except Exception:
+                pass
+            text = text.strip("[]() ")
+        return [part.strip() for part in re.split(r"[,;\n]+", text) if part.strip()]
+    if isinstance(value, dict):
+        return [str(v).strip() for v in value.values() if v not in (None, "")]
+    if isinstance(value, (list, tuple, set)):
+        out = []
+        for item in value:
+            if isinstance(item, str):
+                s = item.strip()
+                if s:
+                    out.append(s)
+            else:
+                out.extend(_as_string_list(item))
+        return out
+    try:
+        return _as_string_list(list(value))
+    except Exception:
+        s = str(value).strip()
+        return [s] if s else []
+
+
 def _normalize_fc_args(obj):
-    if obj is None:
-        return None
-    if isinstance(obj, (str, int, float, bool)):
+    if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
-    if isinstance(obj, dict):
+    if isinstance(obj, Mapping):
         return {k: _normalize_fc_args(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, Iterable):
         return [_normalize_fc_args(v) for v in obj]
-    # Proto map / repeated
     try:
         return {k: _normalize_fc_args(v) for k, v in dict(obj).items()}
     except Exception:
-        return str(obj)
+        try:
+            return [_normalize_fc_args(v) for v in obj]
+        except Exception:
+            return str(obj)
 
 
 def _build_triage_model():

@@ -30,6 +30,7 @@ import { ChatStorageService } from '../../services/ChatStorageService';
 import { GeminiLiveService, getLiveRelayUrl } from '../../services/GeminiLiveService';
 import { openPatientJourney, goBackOrHome } from '../../navigation/openPatientTab';
 import { COLLECTIONS } from '../../services/firestorePaths';
+import { withNormalizedTriageFields } from '../../utils/clinicalFields';
 
 const STATE = {
   CONNECTING: 'connecting',
@@ -301,7 +302,7 @@ export default function LiveChatScreen() {
       try {
         const autoRef = doc(collection(firestore, COLLECTIONS.TRIAGE_CASES));
         await setDoc(autoRef, {
-          ...fallback,
+          ...withNormalizedTriageFields(fallback),
           createdAt: serverTimestamp(),
           waitUpdatedAt: serverTimestamp(),
         });

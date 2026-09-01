@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 import { useRoute } from '@react-navigation/native';
 import { COLORS } from '../../constants/colors';
 import { openPatientTab } from '../../navigation/openPatientTab';
+import { asStringArray } from '../../utils/clinicalFields';
 
 const PRIORITY_CONFIG = {
   CRITICAL: {
@@ -75,6 +76,7 @@ export default function TriageResultScreen() {
     caseId,
   } = route.params || {};
   const cfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.LOW;
+  const indicatorList = asStringArray(riskIndicators);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -173,13 +175,13 @@ export default function TriageResultScreen() {
           ) : null}
 
           {/* Risk indicators */}
-          {riskIndicators?.length > 0 ? (
+          {indicatorList.length > 0 ? (
             <View style={styles.card}>
               <View style={styles.cardTitleRow}>
                 <Ionicons name="warning-outline" size={18} color={cfg.color} />
                 <Text style={styles.cardTitle}>Risk Indicators</Text>
               </View>
-              {riskIndicators.map((indicator, i) => (
+              {indicatorList.map((indicator, i) => (
                 <View key={i} style={styles.indicatorRow}>
                   <View style={[styles.indicatorDot, { backgroundColor: cfg.color }]} />
                   <Text style={styles.indicatorText}>{indicator}</Text>

@@ -18,6 +18,7 @@ import { ScreenHeader, LAYOUT } from '../../components/layout/ScreenHeader';
 import { SessionService } from '../../services/SessionService';
 import { UserProfileService } from '../../services/UserProfileService';
 import { useFacility } from '../../contexts/FacilityContext';
+import { asStringArray } from '../../utils/clinicalFields';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PRIORITY_CFG = {
@@ -261,7 +262,7 @@ function CaseRecord({ caseData: c, isFirst, isLast, isExpanded, onToggle }) {
   const isSealed  = c.status === 'completed';
   const decision  = c.nurseDecision ? DECISION_CFG[c.nurseDecision] : null;
   const riskPct   = c.riskScore ?? null;
-  const indicators = Array.isArray(c.riskIndicators) ? c.riskIndicators : [];
+  const indicators = asStringArray(c.riskIndicators);
 
   return (
     <View style={styles.timelineItem}>
