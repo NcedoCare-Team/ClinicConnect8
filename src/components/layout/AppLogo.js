@@ -18,7 +18,7 @@ export default function AppLogo({ size = 'md', showTagline = false, light = fals
 
       <View style={styles.textBlock}>
         <Text style={[styles.title, { fontSize: titleSize }, light && styles.titleLight]}>
-          Ncedo<Text style={[styles.titleAccent, light && styles.titleAccentLight]}>Care</Text>
+          Clinic<Text style={[styles.titleAccent, light && styles.titleAccentLight]}>Connect8</Text>
         </Text>
         {showTagline && (
           <Text style={[styles.tagline, light && styles.taglineLight]}>
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
   },
   titleAccent: { color: COLORS.primary },
   titleLight: { color: '#FFFFFF' },
-  titleAccentLight: { color: '#BFDBFE' },
+  titleAccentLight: { color: COLORS.sun },
   tagline: {
     fontSize: 11,
     color: COLORS.textTertiary,

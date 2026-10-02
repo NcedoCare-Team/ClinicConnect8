@@ -3,8 +3,8 @@
 // BUGS FIXED IN THIS VERSION:
 //
 // BUG 1 — Wrong Audio import:
-//   OLD: import * as Audio from 'expo-audio'   ← BREAKS everything
-//   FIX: import { Audio } from 'expo-av'       ← CORRECT for SDK 53
+//   expo-av was removed in SDK 55. Voice capture uses expo-audio
+//   through src/services/voiceAudio.js.
 //
 // BUG 2 — Stale closure in Gemini callbacks:
 //   The callbacks (onTurnComplete, onInterrupted, etc.) were assigned once
@@ -33,8 +33,13 @@ import {
   Platform, StatusBar, Alert, ActivityIndicator, Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
-import { Audio }         from 'expo-av';           
 import * as FileSystem   from 'expo-file-system/legacy';
+import {
+  configureVoiceAudioMode,
+  finishWavRecorder,
+  playFile,
+  startWavRecorder,
+} from '../../services/voiceAudio';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons }      from '@expo/vector-icons';
 import { GeminiLiveService, buildSystemInstruction } from '../../services/GeminiLiveService';
@@ -44,9 +49,9 @@ import { API_CONFIG } from '../../services/ApiService';
 const { height: H } = Dimensions.get('window');
 
 const C = {
-  primary:  '#8B5CF6', primaryDark: '#7C3AED',
+  primary:  '#16b3a5', primaryDark: '#0b5a63',
   white: '#FFFFFF', black: '#000000',
-  error: '#EF4444', success: '#10B981',
+  error: '#f26b4e', success: '#7bcfb5',
   glass: 'rgba(255,255,255,0.12)',
 };
 
@@ -149,10 +154,7 @@ export default function InterviewRoomScreen({ navigation, route }) {
     countdownTimerRef.current = null;
     setCountdown(null);
     if (playbackRef.current) {
-      try {
-        await playbackRef.current.stopAsync();
-        await playbackRef.current.unloadAsync();
-      } catch { /* ignore */ }
+      try { playbackRef.current.stop(); } catch { /* ignore */ }
       playbackRef.current = null;
     }
   }, []);
@@ -161,61 +163,27 @@ export default function InterviewRoomScreen({ navigation, route }) {
   const stopMicCapture = useCallback(async () => {
     clearInterval(chunkIntervalRef.current);
     chunkIntervalRef.current = null;
-    if (recordingRef.current) {
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch { /* ignore */ }
-      recordingRef.current = null;
-    }
+    const recorder = recordingRef.current;
+    recordingRef.current = null;
+    await finishWavRecorder(recorder);
   }, []);
-
-  // ✅ Uses expo-av Recording API
-  const makeRecordingOptions = () => ({
-    android: {
-      extension: '.wav',
-      outputFormat: Audio.AndroidOutputFormat.DEFAULT,
-      audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      bitRate: 128000,
-    },
-    ios: {
-      extension: '.wav',
-      outputFormat: Audio.IOSOutputFormat.LINEARPCM,
-      audioQuality: Audio.IOSAudioQuality.HIGH,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      bitRate: 256000,
-      linearPCMBitDepth: 16,
-      linearPCMIsBigEndian: false,
-      linearPCMIsFloat: false,
-    },
-    web: {},
-  });
 
   const startMicCapture = useCallback(async () => {
     if (recordingRef.current) return;
-    // Ensure recording mode is active before creating a recording
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS:         true,
-        playsInSilentModeIOS:       true,
-        staysActiveInBackground:    false,
-        shouldDuckAndroid:          false,
-        playThroughEarpieceAndroid: false,
-      });
+      await configureVoiceAudioMode(true);
     } catch {}
     try {
-      const rec = new Audio.Recording();
-      await rec.prepareToRecordAsync(makeRecordingOptions());
-      await rec.startAsync();
-      recordingRef.current = rec;
+      recordingRef.current = await startWavRecorder();
 
       chunkIntervalRef.current = setInterval(async () => {
         if (!recordingRef.current || isMutedRef.current) return;
         if (!chunkIntervalRef.current) return; // Interval cleared — abort
         try {
-          await recordingRef.current.stopAndUnloadAsync();
+          const finished = recordingRef.current;
+          recordingRef.current = null;
+          const uri = await finishWavRecorder(finished);
           if (!chunkIntervalRef.current) return; // Cleared during async — abort
-          const uri = recordingRef.current.getURI();
 
           if (uri) {
             const b64Full = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
@@ -229,11 +197,7 @@ export default function InterviewRoomScreen({ navigation, route }) {
 
           if (!chunkIntervalRef.current) return; // Cleared during async — abort
 
-          // Restart for next chunk
-          const newRec = new Audio.Recording();
-          await newRec.prepareToRecordAsync(makeRecordingOptions());
-          await newRec.startAsync();
-          recordingRef.current = newRec;
+          recordingRef.current = await startWavRecorder();
         } catch (e) {
           // Only warn if interval is still active (ignore cleanup race errors)
           if (chunkIntervalRef.current) {
@@ -263,13 +227,7 @@ export default function InterviewRoomScreen({ navigation, route }) {
       await stopMicCapture();
       stopVideoCapture();
       try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS:         false,
-          playsInSilentModeIOS:       true,
-          staysActiveInBackground:    false,
-          shouldDuckAndroid:          false,
-          playThroughEarpieceAndroid: false,
-        });
+        await configureVoiceAudioMode(false);
       } catch {}
 
       playNextRef.current?.();
@@ -296,13 +254,7 @@ export default function InterviewRoomScreen({ navigation, route }) {
 
         // Switch back to recording mode for mic capture
         try {
-          await Audio.setAudioModeAsync({
-            allowsRecordingIOS:         true,
-            playsInSilentModeIOS:       true,
-            staysActiveInBackground:    false,
-            shouldDuckAndroid:          false,
-            playThroughEarpieceAndroid: false,
-          });
+          await configureVoiceAudioMode(true);
         } catch {}
 
         if (roomStateRef.current === STATE.AI_SPEAKING) {
@@ -345,20 +297,14 @@ export default function InterviewRoomScreen({ navigation, route }) {
 
     const wavUri = audioQueueRef.current.shift();
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: wavUri },
-        { shouldPlay: true, volume: 1.0 },
-      );
-      playbackRef.current = sound;
-
-      sound.setOnPlaybackStatusUpdate(status => {
-        if (status.didJustFinish) {
-          sound.unloadAsync().catch(() => {});
+      playbackRef.current = playFile(wavUri, {
+        volume: 1,
+        onFinish: () => {
           playbackRef.current = null;
           // Keep audio file for session replay — add to saved list
           sessionAudioFilesRef.current.push(wavUri);
           playNextRef.current?.();
-        }
+        },
       });
     } catch (err) {
       console.log('[Room] playNext:', err);
@@ -398,14 +344,12 @@ export default function InterviewRoomScreen({ navigation, route }) {
     setCountdown(null);
     // NOTE: do NOT clear sessionAudioFilesRef here — we need them for saving
     if (recordingRef.current) {
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch { /* ignore */ }
+      const recorder = recordingRef.current;
       recordingRef.current = null;
+      await finishWavRecorder(recorder);
     }
     if (playbackRef.current) {
-      try {
-        await playbackRef.current.stopAsync();
-        await playbackRef.current.unloadAsync();
-      } catch { /* ignore */ }
+      try { playbackRef.current.stop(); } catch { /* ignore */ }
       playbackRef.current = null;
     }
     geminiRef.current?.disconnect();
@@ -630,17 +574,11 @@ Scoring guide: 30-50 weak, 51-65 average, 66-80 good, 81-95 excellent. Be honest
       if (!cameraPermission?.granted) await requestCamera();
       if (!micPermission?.granted)    await requestMic();
 
-      // 2. ✅ expo-av audio mode — start in playback mode (speaker, not earpiece)
+      // 2. Start in playback mode (speaker, not earpiece)
       try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS:         false,
-          playsInSilentModeIOS:       true,
-          staysActiveInBackground:    false,
-          shouldDuckAndroid:          false,
-          playThroughEarpieceAndroid: false,
-        });
+        await configureVoiceAudioMode(false);
       } catch (e) {
-        console.log('[Room] Audio.setAudioModeAsync:', e);
+        console.log('[Room] configureVoiceAudioMode:', e);
         Alert.alert('Audio Error', 'Could not configure audio. Please try again.');
         safeGoBack();
         return;
@@ -998,7 +936,7 @@ const s = StyleSheet.create({
   controls: { position: 'absolute', bottom: Platform.OS === 'ios' ? 44 : 24, left: 0, right: 0, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 28, paddingHorizontal: 30 },
   ctrl:      { alignItems: 'center', gap: 6 },
   ctrlInner: { width: CTRL, height: CTRL, borderRadius: CTRL/2, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
-  ctrlActive:{ backgroundColor: 'rgba(139,92,246,0.55)', borderColor: C.primary },
+  ctrlActive:{ backgroundColor: 'rgba(22,179,165,0.55)', borderColor: C.primary },
   ctrlLbl:   { color: C.white, fontSize: 11, fontWeight: '600', textAlign: 'center' },
   endCtrl:   { alignItems: 'center', gap: 6 },
   endBtn:    { width: END, height: END, borderRadius: END/2, backgroundColor: C.error, alignItems: 'center', justifyContent: 'center', ...Platform.select({ ios: { shadowColor: C.error, shadowOffset:{width:0,height:6}, shadowOpacity:0.45, shadowRadius:12 }, android: { elevation: 10 } }) },
@@ -1011,7 +949,7 @@ const s = StyleSheet.create({
   closeEndGradient: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 24, paddingVertical: 14 },
   closeEndText: { color: C.white, fontSize: 15, fontWeight: '700' },
 
-  countdownCircle: { width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: C.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 8, backgroundColor: 'rgba(139,92,246,0.15)' },
+  countdownCircle: { width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: C.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 8, backgroundColor: 'rgba(22,179,165,0.15)' },
   countdownNum:    { fontSize: 28, fontWeight: '900', color: C.white },
 });
 

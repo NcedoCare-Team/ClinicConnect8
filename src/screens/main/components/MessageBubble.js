@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   documentAttachment: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(139,92,246,0.08)',
+    backgroundColor: 'rgba(22,179,165,0.10)',
     borderRadius: 10,
     padding: 8,
     marginBottom: 6,
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: 'rgba(139,92,246,0.12)',
+    backgroundColor: 'rgba(22,179,165,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },

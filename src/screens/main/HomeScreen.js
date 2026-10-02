@@ -6,7 +6,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Platform, ActivityIndicator,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';

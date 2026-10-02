@@ -354,7 +354,7 @@ export default function SettingsScreen({ navigation }) {
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footer}>NcedoCare v1.0 · Patient App</Text>
+        <Text style={styles.footer}>ClinicConnect8 v1.0 · Patient App</Text>
         <View style={{ height: LAYOUT.bottomTabClearance }} />
       </ScrollView>
     </View>

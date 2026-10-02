@@ -41,7 +41,7 @@ const MarkdownText = ({ text, style, isUser = false }) => {
               baseStyle,
               {
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                backgroundColor: isUser ? 'rgba(255,255,255,0.18)' : 'rgba(139,92,246,0.08)',
+                backgroundColor: isUser ? 'rgba(255,255,255,0.18)' : 'rgba(22,179,165,0.10)',
                 paddingHorizontal: 4,
                 borderRadius: 3,
                 fontSize: (baseStyle.fontSize || 15) - 1,

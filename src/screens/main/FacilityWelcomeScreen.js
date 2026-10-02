@@ -23,10 +23,10 @@ const TYPE_ICON = {
 };
 
 const TYPE_COLOR = {
-  hospital: ['#1E3A8A', COLORS.primaryDark, COLORS.primary],
-  clinic:   [COLORS.primaryDark, COLORS.primary, '#059669'],
-  pharmacy: ['#0C4A6E', '#0369A1', '#0EA5E9'],
-  doctor:   ['#5B21B6', '#7C3AED', '#A78BFA'],
+  hospital: [COLORS.canvas, COLORS.primaryDark, COLORS.primary],
+  clinic:   [COLORS.primaryDark, COLORS.primary, COLORS.mint],
+  pharmacy: ['#1e4f86', '#3d82c4', COLORS.blue],
+  doctor:   ['#6d4f8a', '#8d6aaf', COLORS.plum],
 };
 
 export default function FacilityWelcomeScreen() {

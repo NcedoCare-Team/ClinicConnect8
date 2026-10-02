@@ -1,17 +1,12 @@
 {
   "expo": {
-    "name": "NcedoCare",
+    "name": "ClinicConnect8",
     "slug": "ncedocare",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "automatic",
     "scheme": "ncedocare",
-    "splash": {
-      "image": "./assets/logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -26,37 +21,53 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true,
-      "usesCleartextTraffic": true
+      }
     },
     "web": {
       "favicon": "./assets/logo.png"
     },
     "plugins": [
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/logo.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "imageWidth": 200
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
         "expo-camera",
         {
-          "cameraPermission": "NcedoCare needs camera access to support your healthcare session.",
-          "microphonePermission": "NcedoCare needs microphone access to capture voice input.",
+          "cameraPermission": "ClinicConnect8 needs camera access to support your healthcare session.",
+          "microphonePermission": "ClinicConnect8 needs microphone access to capture voice input.",
           "recordAudioAndroid": true
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "NcedoCare needs microphone access to capture voice input."
+          "microphonePermission": "ClinicConnect8 needs microphone access to capture voice input."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "NcedoCare needs photo library access so you can upload documents or reports."
+          "photosPermission": "ClinicConnect8 needs photo library access so you can upload documents or reports."
         }
       ],
       "@react-native-community/datetimepicker",
       "expo-router",
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ]
   }
 }

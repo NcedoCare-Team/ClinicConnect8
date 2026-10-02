@@ -7,65 +7,65 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { Audio }         from 'expo-av';           
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../../constants/colors';
 
 const AudioRecorder = ({ onStopRecording, onCancel }) => {
-  const [recording, setRecording] = useState(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [duration, setDuration] = useState(0);
-  const [soundWaves] = useState([...Array(20)].map(() => useRef(new Animated.Value(0.3)).current));
+  const soundWaves = useRef([...Array(20)].map(() => new Animated.Value(0.3))).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    let active = true;
+    const interval = setInterval(() => {
+      setDuration((prev) => prev + 1);
+    }, 1000);
+
+    const startRecording = async () => {
+      try {
+        const permission = await requestRecordingPermissionsAsync();
+        if (!active || !permission.granted) {
+          if (active) onCancel();
+          return;
+        }
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+        });
+        if (!active) return;
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+      } catch (err) {
+        console.error('Recording error:', err);
+        if (active) onCancel();
+      }
+    };
+
     startRecording();
     animateWaves();
     animatePulse();
 
     return () => {
-      if (recording) {
-        recording.stopAndUnloadAsync();
+      active = false;
+      clearInterval(interval);
+      if (recorder.isRecording) {
+        recorder.stop().catch(() => {});
       }
     };
-  }, []);
-
-  const startRecording = async () => {
-    try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(recording);
-
-      // Update duration
-      const interval = setInterval(() => {
-        setDuration(prev => prev + 1);
-      }, 1000);
-
-      recording.setOnRecordingStatusUpdate((status) => {
-        if (!status.isRecording) {
-          clearInterval(interval);
-        }
-      });
-    } catch (err) {
-      console.error('Recording error:', err);
-      onCancel();
-    }
-  };
+  }, [recorder]);
 
   const stopRecording = async () => {
-    if (!recording) return;
-
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      onStopRecording(uri); // This will trigger auto-send
+      await recorder.stop();
+      onStopRecording(recorder.uri);
     } catch (error) {
       console.error('Stop recording error:', error);
       onCancel();

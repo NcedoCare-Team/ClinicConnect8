@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions } from 'expo-router/react-navigation';
 import { usePathname, useRootNavigation, useSegments } from 'expo-router';
 
 function findNavigatorState(state, type) {

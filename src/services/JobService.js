@@ -19,16 +19,16 @@ const RESULTS_PER_PAGE = 10;
 // ─── Adzuna Category Tags (ZA) ───────────────────────────────────────────────
 // These are Adzuna's category tags for South Africa
 export const JOB_CATEGORIES = [
-  { label: 'Tech & IT',          tag: 'it-jobs',                    icon: 'code-slash',          color: '#2563EB' },
-  { label: 'Finance',            tag: 'accounting-finance-jobs',    icon: 'cash',                color: '#10B981' },
-  { label: 'Healthcare',         tag: 'healthcare-nursing-jobs',    icon: 'medkit',              color: '#EF4444' },
-  { label: 'Engineering',        tag: 'engineering-jobs',           icon: 'construct',           color: '#F59E0B' },
-  { label: 'Marketing',          tag: 'marketing-jobs',             icon: 'megaphone',           color: '#8B5CF6' },
-  { label: 'Retail',             tag: 'retail-jobs',                icon: 'bag-handle',          color: '#06B6D4' },
-  { label: 'Education',          tag: 'teaching-jobs',              icon: 'school',              color: '#F97316' },
-  { label: 'Admin & Office',     tag: 'admin-jobs',                 icon: 'briefcase',           color: '#64748B' },
-  { label: 'Sales',              tag: 'sales-jobs',                 icon: 'trending-up',         color: '#EC4899' },
-  { label: 'HR & Recruitment',   tag: 'hr-jobs',                    icon: 'people',              color: '#14B8A6' },
+  { label: 'Tech & IT',          tag: 'it-jobs',                    icon: 'code-slash',          color: '#5a9bdc' },
+  { label: 'Finance',            tag: 'accounting-finance-jobs',    icon: 'cash',                color: '#0e7c6b' },
+  { label: 'Healthcare',         tag: 'healthcare-nursing-jobs',    icon: 'medkit',              color: '#f26b4e' },
+  { label: 'Engineering',        tag: 'engineering-jobs',           icon: 'construct',           color: '#f5b83d' },
+  { label: 'Marketing',          tag: 'marketing-jobs',             icon: 'megaphone',           color: '#b088d0' },
+  { label: 'Retail',             tag: 'retail-jobs',                icon: 'bag-handle',          color: '#16b3a5' },
+  { label: 'Education',          tag: 'teaching-jobs',              icon: 'school',              color: '#e06a28' },
+  { label: 'Admin & Office',     tag: 'admin-jobs',                 icon: 'briefcase',           color: '#3d6e66' },
+  { label: 'Sales',              tag: 'sales-jobs',                 icon: 'trending-up',         color: '#7bcfb5' },
+  { label: 'HR & Recruitment',   tag: 'hr-jobs',                    icon: 'people',              color: '#0b5a63' },
 ];
 
 // ─── Helper: Build auth params ────────────────────────────────────────────────

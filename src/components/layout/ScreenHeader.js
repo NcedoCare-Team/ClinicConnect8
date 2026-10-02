@@ -1,4 +1,4 @@
-// Shared screen header — logo-led with decorative blue gradient band.
+// Shared screen header — logo-led with the Clinic Connect teal gradient.
 
 import React from 'react';
 import {
@@ -10,8 +10,8 @@ import { COLORS } from '../../constants/colors';
 import AppLogo from './AppLogo';
 
 function HeaderDecorations({ light }) {
-  const color = light ? 'rgba(255,255,255,0.14)' : 'rgba(37,99,235,0.10)';
-  const color2 = light ? 'rgba(255,255,255,0.08)' : 'rgba(37,99,235,0.06)';
+  const color = light ? 'rgba(255,255,255,0.14)' : 'rgba(22,179,165,0.16)';
+  const color2 = light ? 'rgba(255,255,255,0.08)' : 'rgba(22,179,165,0.08)';
   return (
     <>
       <View style={[styles.decoCircle, styles.deco1, { backgroundColor: color }]} />
@@ -32,7 +32,7 @@ export function HomeHeader({ notificationCount = 3, onNotificationPress }) {
     <View style={styles.homeHeaderWrap}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
       <LinearGradient
-        colors={[COLORS.primary, COLORS.primaryDark, '#1E40AF']}
+        colors={[COLORS.primary, COLORS.primaryDark, COLORS.canvas]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.homeHeader}>
@@ -150,7 +150,7 @@ export function ProfileHeader({ displayName, facility, avatarUri, onAvatarPress 
     <View style={styles.profileHeaderWrap}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
       <LinearGradient
-        colors={[COLORS.primary, COLORS.primaryDark, '#1E40AF']}
+        colors={[COLORS.primary, COLORS.primaryDark, COLORS.canvas]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.profileHeader}>

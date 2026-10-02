@@ -5,7 +5,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Platform, Alert,
   ScrollView, StatusBar, useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
     borderRadius: 80,
     top: -55,
     right: -35,
-    backgroundColor: 'rgba(37,99,235,0.05)',
+    backgroundColor: 'rgba(22,179,165,0.08)',
   },
   decoCircle2: {
     position: 'absolute',
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     bottom: -18,
     left: -28,
-    backgroundColor: 'rgba(37,99,235,0.04)',
+    backgroundColor: 'rgba(22,179,165,0.06)',
   },
   decoDot1: {
     position: 'absolute',
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   aiOrbRing: {
     padding: 3,
     borderRadius: 22,
-    backgroundColor: 'rgba(37,99,235,0.06)',
+    backgroundColor: 'rgba(22,179,165,0.10)',
   },
   aiOrb: {
     width: 68,

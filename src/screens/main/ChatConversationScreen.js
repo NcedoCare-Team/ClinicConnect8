@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute } from 'expo-router/react-navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, firestore } from '../../../firebase';
@@ -553,7 +553,7 @@ export default function ChatConversationScreen() {
       </Text>
       <Text style={styles.emptySubtitle}>
         {conversationId
-          ? 'Send a message to start your health assessment with NcedoCare AI'
+          ? 'Send a message to start your health assessment with ClinicConnect8'
           : 'Describe how you feel — symptoms, duration, and any concerns'}
       </Text>
 
@@ -633,7 +633,7 @@ export default function ChatConversationScreen() {
 
               <View style={styles.brandTextContainer}>
                 <View style={styles.brandNameRow}>
-                  <Text style={styles.brandNameText}>NcedoCare</Text>
+                  <Text style={styles.brandNameText}>ClinicConnect8</Text>
                   <View style={styles.aiChip}>
                     <Text style={styles.aiChipText}>AI</Text>
                   </View>

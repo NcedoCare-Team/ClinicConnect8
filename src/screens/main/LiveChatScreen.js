@@ -15,8 +15,14 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
+import {
+  configureVoiceAudioMode,
+  finishWavRecorder,
+  playFile,
+  requestRecordingPermissionsAsync,
+  startWavRecorder,
+} from '../../services/voiceAudio';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -147,53 +153,21 @@ export default function LiveChatScreen() {
     };
   };
 
-  const makeRecordingOptions = () => ({
-    android: {
-      extension: '.wav',
-      outputFormat: Audio.AndroidOutputFormat.DEFAULT,
-      audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      bitRate: 128000,
-    },
-    ios: {
-      extension: '.wav',
-      outputFormat: Audio.IOSOutputFormat.LINEARPCM,
-      audioQuality: Audio.IOSAudioQuality.HIGH,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      bitRate: 256000,
-      linearPCMBitDepth: 16,
-      linearPCMIsBigEndian: false,
-      linearPCMIsFloat: false,
-    },
-    web: {},
-  });
-
   const stopMicCapture = useCallback(async () => {
     clearInterval(chunkIntervalRef.current);
     chunkIntervalRef.current = null;
-    if (recordingRef.current) {
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch { /* ignore */ }
-      recordingRef.current = null;
-    }
+    const recorder = recordingRef.current;
+    recordingRef.current = null;
+    await finishWavRecorder(recorder);
   }, []);
 
   const startMicCapture = useCallback(async () => {
     if (recordingRef.current) return;
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: false,
-        playThroughEarpieceAndroid: false,
-      });
+      await configureVoiceAudioMode(true);
     } catch { /* ignore */ }
     try {
-      const rec = new Audio.Recording();
-      await rec.prepareToRecordAsync(makeRecordingOptions());
-      await rec.startAsync();
+      const rec = await startWavRecorder();
       recordingRef.current = rec;
 
       setSessionStateSynced(STATE.USER_SPEAKING);
@@ -203,9 +177,10 @@ export default function LiveChatScreen() {
         if (!recordingRef.current || isMutedRef.current) return;
         if (!chunkIntervalRef.current) return;
         try {
-          await recordingRef.current.stopAndUnloadAsync();
+          const finished = recordingRef.current;
+          recordingRef.current = null;
+          const uri = await finishWavRecorder(finished);
           if (!chunkIntervalRef.current) return;
-          const uri = recordingRef.current.getURI();
 
           if (uri) {
             const b64Full = await FileSystem.readAsStringAsync(uri, {
@@ -218,10 +193,7 @@ export default function LiveChatScreen() {
           }
 
           if (!chunkIntervalRef.current) return;
-          const newRec = new Audio.Recording();
-          await newRec.prepareToRecordAsync(makeRecordingOptions());
-          await newRec.startAsync();
-          recordingRef.current = newRec;
+          recordingRef.current = await startWavRecorder();
         } catch (e) {
           if (chunkIntervalRef.current) {
             console.warn('[LiveChat] chunk error:', e.message);
@@ -255,15 +227,12 @@ export default function LiveChatScreen() {
     }
 
     try {
-      const { sound } = await Audio.Sound.createAsync({ uri: nextWavUri }, { shouldPlay: true });
-      playbackSoundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) {
-          sound.unloadAsync().catch(() => {});
+      playbackSoundRef.current = playFile(nextWavUri, {
+        onFinish: () => {
           playbackSoundRef.current = null;
           FileSystem.deleteAsync(nextWavUri, { idempotent: true }).catch(() => {});
           playNext();
-        }
+        },
       });
     } catch (err) {
       console.log('[LiveChat] playNext error:', err);
@@ -281,13 +250,7 @@ export default function LiveChatScreen() {
       setStatusText('Dr. Ncedo is speaking…');
       await stopMicCapture();
       try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: false,
-          playThroughEarpieceAndroid: false,
-        });
+        await configureVoiceAudioMode(false);
       } catch { /* ignore */ }
       playNextRef.current?.();
     }
@@ -351,7 +314,7 @@ export default function LiveChatScreen() {
           return;
         }
 
-        const { status: micStatus } = await Audio.requestPermissionsAsync();
+        const { status: micStatus } = await requestRecordingPermissionsAsync();
         if (micStatus !== 'granted') {
           Alert.alert(
             'Microphone required',
@@ -389,8 +352,7 @@ export default function LiveChatScreen() {
         liveService.onInterrupted = () => {
           if (!isMounted) return;
           if (playbackSoundRef.current) {
-            playbackSoundRef.current.stopAsync().catch(() => {});
-            playbackSoundRef.current.unloadAsync().catch(() => {});
+            playbackSoundRef.current.stop();
             playbackSoundRef.current = null;
           }
           audioQueueRef.current = [];
@@ -446,7 +408,7 @@ export default function LiveChatScreen() {
       isMounted = false;
       stopMicCapture();
       if (playbackSoundRef.current) {
-        playbackSoundRef.current.unloadAsync().catch(() => {});
+        playbackSoundRef.current.stop();
       }
       if (geminiRef.current) {
         geminiRef.current.disconnect();
@@ -532,7 +494,7 @@ export default function LiveChatScreen() {
               </Animated.View>
               <View style={styles.brandTextContainer}>
                 <View style={styles.brandNameRow}>
-                  <Text style={styles.brandNameText}>NcedoCare</Text>
+                  <Text style={styles.brandNameText}>ClinicConnect8</Text>
                   <View style={styles.aiChip}>
                     <Text style={styles.aiChipText}>AI</Text>
                   </View>

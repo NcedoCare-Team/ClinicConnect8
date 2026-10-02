@@ -27,19 +27,19 @@ import { UserProfileService } from '../../services/UserProfileService';
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
-  primary:          '#8B5CF6',
-  primaryDark:      '#7C3AED',
-  primaryLight:     '#A78BFA',
-  primaryVeryLight: '#EDE9FE',
-  bg:               '#FAFAFA',
+  primary:          '#16b3a5',
+  primaryDark:      '#0b5a63',
+  primaryLight:     '#7bcfb5',
+  primaryVeryLight: '#e7f6f3',
+  bg:               '#f4fbf9',
   white:            '#FFFFFF',
-  text:             '#111827',
-  textSec:          '#6B7280',
-  textTer:          '#9CA3AF',
-  border:           '#E5E7EB',
-  borderLight:      '#F3F4F6',
-  success:          '#10B981',
-  error:            '#EF4444',
+  text:             '#062f38',
+  textSec:          '#3d6e66',
+  textTer:          '#6d9a92',
+  border:           'rgba(6,47,56,0.14)',
+  borderLight:      'rgba(6,47,56,0.08)',
+  success:          '#0e7c6b',
+  error:            '#f26b4e',
 };
 
 // ─── Option Sets (concise — only what the AI needs) ──────────────────────────
@@ -249,7 +249,7 @@ export default function AboutMeScreen({ navigation, route }) {
 
       {/* Header */}
       <LinearGradient
-        colors={['rgba(139,92,246,0.12)', 'rgba(139,92,246,0.02)']}
+        colors={['rgba(22,179,165,0.16)', 'rgba(22,179,165,0.02)']}
         style={styles.headerGradient}
       />
       <View style={styles.header}>

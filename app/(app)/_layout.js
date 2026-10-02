@@ -1,8 +1,8 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, useColorScheme } from 'react-native';
+import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS } from '../../src/constants/colors';
+import { COLORS, PALETTE } from '../../src/constants/colors';
 import { TAB_BAR_HEIGHT } from '../../src/constants/layout';
 import { useTabStackReset } from '../../src/hooks/useTabStackReset';
 import { PATIENT_TAB_ROOTS } from '../../src/navigation/openPatientTab';
@@ -16,8 +16,6 @@ function tabIcon(outline, filled) {
 export default function PatientTabLayout() {
   useTabStackReset(PATIENT_TAB_ROOTS, '(app)');
 
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
   const insets = useSafeAreaInsets();
 
   const bottomInset = Platform.OS === 'android' ? insets.bottom : Math.max(insets.bottom, 0);
@@ -26,11 +24,11 @@ export default function PatientTabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: isDark ? COLORS.textTertiary : COLORS.inkLight,
+        tabBarActiveTintColor: COLORS.sun,
+        tabBarInactiveTintColor: PALETTE.mut,
         tabBarStyle: {
-          backgroundColor: isDark ? COLORS.inkDark : COLORS.white,
-          borderTopColor: isDark ? COLORS.inkSoft : COLORS.borderLight,
+          backgroundColor: COLORS.canvas,
+          borderTopColor: PALETTE.line,
           borderTopWidth: 1,
           height: TAB_BAR_HEIGHT + bottomInset,
           paddingBottom: bottomInset + 6,

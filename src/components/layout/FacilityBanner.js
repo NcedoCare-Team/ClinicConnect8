@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   iconRing: {
     padding: 3,
     borderRadius: 16,
-    backgroundColor: 'rgba(37,99,235,0.12)',
+    backgroundColor: COLORS.primarySoft,
   },
   iconGradient: {
     width: 40,

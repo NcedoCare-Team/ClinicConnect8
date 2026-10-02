@@ -1,56 +1,77 @@
-// NcedoCare — Hospitality Blue Palette
-// Primary: Trust Blue  |  Priority: Red/Orange/Amber/Green  |  BG: Clean White
+// Clinic Connect 8 — palette from the problem-statement presentation.
+// Canvas: deep teal  |  Accents: teal, coral, sun, mint, blue, plum
+
+export const PALETTE = {
+  bg: '#062f38',
+  bgLift: '#0b5a63',
+  ink: '#f4fbf9',
+  mut: '#a9d6cc',
+  teal: '#16b3a5',
+  coral: '#f26b4e',
+  sun: '#f5b83d',
+  mint: '#7bcfb5',
+  blue: '#5a9bdc',
+  plum: '#b088d0',
+  glass: 'rgba(255,255,255,0.08)',
+  line: 'rgba(255,255,255,0.18)',
+};
 
 export const COLORS = {
-  // ── Primary Blue (Brand / Hospitality) ────────────────────
-  primary:          '#2563EB',   // Royal blue — main brand CTA
-  primaryDark:      '#1D4ED8',   // Deep blue   — pressed / dark variant
-  primaryLight:     '#3B82F6',   // Mid blue    — light accents
-  primaryVeryLight: '#EFF6FF',   // Near-white blue tint — card backgrounds
-  primaryGlow:      '#BFDBFE',   // Blue highlight — borders / glows
-  primarySoft:      'rgba(37, 99, 235, 0.12)',  // Selected tab indicator
-  primaryFaded:     'rgba(37, 99, 235, 0.06)',
+  // ── Brand ─────────────────────────────────────────────────
+  primary:          PALETTE.teal,
+  primaryDark:      PALETTE.bgLift,
+  primaryLight:     PALETTE.mint,
+  primaryVeryLight: '#e7f6f3',
+  primaryGlow:      '#b7ebe4',
+  primarySoft:      'rgba(22, 179, 165, 0.16)',
+  primaryFaded:     'rgba(22, 179, 165, 0.08)',
+  canvas:           PALETTE.bg,
+  sun:              PALETTE.sun,
+  coral:            PALETTE.coral,
+  mint:             PALETTE.mint,
+  blue:             PALETTE.blue,
+  plum:             PALETTE.plum,
 
-  // ── Ink / Dark ────────────────────────────────────────────
-  ink:              '#0A0A0F',
-  inkDark:          '#0F172A',   // Slate navy — text/icons on dark
-  inkSoft:          '#1E293B',   // Soft slate — secondary dark bg
-  inkMid:           '#334155',   // Mid slate — metadata text
-  inkLight:         '#64748B',   // Light slate — placeholder / hint
+  // ── Ink ───────────────────────────────────────────────────
+  ink:              PALETTE.bg,
+  inkDark:          PALETTE.bg,
+  inkSoft:          '#0a4550',
+  inkMid:           '#1d5c62',
+  inkLight:         '#5d8f86',
 
-  // ── Background ────────────────────────────────────────────
-  background:           '#FFFFFF',
-  backgroundSecondary:  '#F8FAFC',
-  backgroundTertiary:   '#F1F5F9',
+  // ── Background (paper, so body text stays readable) ───────
+  background:           PALETTE.ink,
+  backgroundSecondary:  '#e7f4f1',
+  backgroundTertiary:   '#d5ebe6',
 
   // ── Text ──────────────────────────────────────────────────
-  textPrimary:   '#0F172A',
-  textSecondary: '#475569',
-  textTertiary:  '#94A3B8',
+  textPrimary:   PALETTE.bg,
+  textSecondary: '#3d6e66',
+  textTertiary:  '#6d9a92',
 
-  // ── Triage Priority Colors ────────────────────────────────
-  critical:      '#DC2626',
-  criticalLight: '#FEF2F2',
-  high:          '#EA580C',
-  highLight:     '#FFF7ED',
-  medium:        '#D97706',
-  mediumLight:   '#FFFBEB',
-  low:           '#16A34A',
-  lowLight:      '#F0FDF4',
+  // ── Priority (same hues, darkened where used as text) ─────
+  critical:      '#e1553a',
+  criticalLight: '#fde8e3',
+  high:          '#e06a28',
+  highLight:     '#fff1e8',
+  medium:        '#9a6b12',
+  mediumLight:   '#fff4d6',
+  low:           '#0e7c6b',
+  lowLight:      '#e5f7f2',
 
   // ── Status ────────────────────────────────────────────────
-  success:      '#16A34A',
-  successLight: '#F0FDF4',
-  error:        '#DC2626',
-  errorLight:   '#FEF2F2',
-  warning:      '#D97706',
-  warningLight: '#FFFBEB',
-  info:         '#0EA5E9',
-  infoLight:    '#F0F9FF',
+  success:      '#0e7c6b',
+  successLight: '#e5f7f2',
+  error:        PALETTE.coral,
+  errorLight:   '#fde8e3',
+  warning:      '#9a6b12',
+  warningLight: '#fff4d6',
+  info:         '#3a7ec4',
+  infoLight:    '#e8f3fb',
 
   // ── UI Chrome ─────────────────────────────────────────────
-  border:       '#CBD5E1',
-  borderLight:  '#E2E8F0',
+  border:       'rgba(6, 47, 56, 0.14)',
+  borderLight:  'rgba(6, 47, 56, 0.08)',
   white:        '#FFFFFF',
   black:        '#000000',
   transparent:  'transparent',

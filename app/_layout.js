@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
-import { ThemeProvider, DefaultTheme } from '@react-navigation/native';
+import { ThemeProvider, DefaultTheme } from 'expo-router/react-navigation';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -108,7 +108,7 @@ function AuthGate() {
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading NcedoCare...</Text>
+          <Text style={styles.loadingText}>Loading ClinicConnect8...</Text>
         </View>
       )}
     </>

@@ -12,7 +12,7 @@ import {
 } from 'firebase/auth';
 import { setDoc, getDoc } from 'firebase/firestore';
 import { StorageService } from '../../utils/storage';
-import { COLORS } from '../../constants/colors';
+import { COLORS, PALETTE } from '../../constants/colors';
 import { patientRef } from '../../services/firestorePaths';
 
 export default function LoginScreen() {
@@ -89,15 +89,15 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient colors={['#EBF5EF', '#F4FAF6', '#FFFFFF']} style={styles.container}>
+    <LinearGradient colors={[COLORS.canvas, COLORS.primaryDark, COLORS.canvas]} style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kbView}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
           <View style={styles.header}>
             <View style={styles.logoContainer}>
-              <Ionicons name="heart-circle" size={64} color={COLORS.primary} />
+              <Ionicons name="heart-circle" size={64} color={COLORS.coral} />
             </View>
-            <Text style={styles.title}>NcedoCare</Text>
+            <Text style={styles.title}>ClinicConnect8</Text>
             <Text style={styles.subtitle}>Smarter care for stronger communities</Text>
           </View>
 
@@ -215,8 +215,8 @@ const styles = StyleSheet.create({
 
   header:       { alignItems: 'center', marginBottom: 36 },
   logoContainer: { marginBottom: 12 },
-  title:        { fontSize: 34, fontWeight: '900', color: COLORS.textPrimary, letterSpacing: -0.5 },
-  subtitle:     { fontSize: 14, color: COLORS.textSecondary, marginTop: 4, textAlign: 'center' },
+  title:        { fontSize: 34, fontWeight: '900', color: PALETTE.ink, letterSpacing: -0.5 },
+  subtitle:     { fontSize: 14, color: PALETTE.mut, marginTop: 4, textAlign: 'center' },
 
   formContainer: {
     backgroundColor: COLORS.white, borderRadius: 24, padding: 24,

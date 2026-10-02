@@ -823,7 +823,7 @@ const styles = StyleSheet.create({
   },
   activeCardCall: { borderLeftColor: '#16A34A' },
   activeCardAttended: { borderLeftColor: COLORS.primary },
-  activeCardStay: { borderLeftColor: '#0EA5E9' },
+  activeCardStay: { borderLeftColor: COLORS.blue },
   activeCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

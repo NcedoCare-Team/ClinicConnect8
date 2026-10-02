@@ -56,7 +56,7 @@ try:
         system_instruction = file.read()
 except FileNotFoundError:
     system_instruction = (
-        "You are the NcedoCare AI Triage Agent. "
+        "You are the ClinicConnect8 Triage Agent. "
         "Analyse patient symptoms and return a structured JSON triage assessment with fields: "
         "priority (CRITICAL|HIGH|MEDIUM|LOW), riskScore (0-100), confidence (0-100), "
         "reasoning, riskIndicators, recommendedAction, estimatedWait."
@@ -786,7 +786,7 @@ def generate_conversation_title(user_input, ai_response_text, image_present, aud
 def health_check():
     return jsonify({
         "status": "healthy",
-        "message": "NcedoCare AI Triage API is running",
+        "message": "ClinicConnect8 Triage API is running",
         "timestamp": datetime.now().isoformat()
     }), 200
 
@@ -1249,7 +1249,7 @@ def analyse_document():
 
 if __name__ == '__main__':
     print(f"\n{'='*60}")
-    print(f"NcedoCare AI Triage Backend Starting (text chat / REST only)")
+    print(f"ClinicConnect8 Triage Backend Starting (text chat / REST only)")
     print(f"{'='*60}")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Triage Endpoint: http://0.0.0.0:5000/api/triage")
